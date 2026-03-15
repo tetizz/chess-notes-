@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Source+Code+Pro:wght@400;500&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0c0b;
+  --bg2: #131312;
+  --bg3: #1a1a18;
+  --border: #262624;
+  --border2: #333330;
+  --text: #d8d4c8;
+  --muted: #666660;
+  --muted2: #4a4a46;
+  --accent: #c8a84a;
+  --accent2: #8fb87a;
+  --light-sq: #eedcb4;
+  --dark-sq: #a07040;
+  --sq: 52px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Lora', serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+header {
+  padding: 48px 48px 32px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+header::before {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0;
+  width: 120px; height: 2px;
+  background: var(--accent);
+}
+.site-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.site-sub {
+  font-size: 13px;
+  color: var(--muted);
+  font-family: 'Source Code Pro', monospace;
+  letter-spacing: .06em;
+}
+
+/* ── Layout ── */
+.container {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: calc(100vh - 117px);
+}
+
+/* ── Sidebar nav ── */
+nav {
+  border-right: 1px solid var(--border);
+  padding: 28px 0;
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 117px);
+  overflow-y: auto;
+}
+.nav-section {
+  padding: 0 20px;
+  margin-bottom: 24px;
+}
+.nav-label {
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  font-family: 'Source Code Pro', monospace;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+.nav-item {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  transition: color .15s, background .15s;
+  font-family: 'Lora', serif;
+  line-height: 1.4;
+}
+.nav-item:hover { color: var(--text); background: var(--bg3); }
+.nav-item.active { color: var(--accent); background: rgba(200,168,74,.07); }
+.nav-item .nav-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-family: 'Source Code Pro', monospace;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--muted);
+}
+
+/* ── Main content ── */
+main {
+  padding: 40px 48px;
+  max-width: 860px;
+}
+
+/* ── Entry card ── */
+.entry {
+  margin-bottom: 64px;
+  scroll-margin-top: 32px;
+}
+.entry-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.entry-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0;
+  width: 40px; height: 1px;
+  background: var(--accent2);
+}
+.entry-num {
+  font-size: 10px;
+  font-family: 'Source Code Pro', monospace;
+  color: var(--muted2);
+  letter-spacing: .1em;
+  margin-bottom: 6px;
+}
+.entry-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+.entry-meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: 'Source Code Pro', monospace;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: 'Source Code Pro', monospace;
+  color: var(--muted);
+  background: var(--bg2);
+}
+.tag.opening { border-color: rgba(200,168,74,.3); color: var(--accent); background: rgba(200,168,74,.05); }
+.tag.tactics { border-color: rgba(180,80,80,.3); color: #c87878; background: rgba(180,80,80,.05); }
+.tag.endgame { border-color: rgba(100,150,200,.3); color: #7aa8d4; background: rgba(100,150,200,.05); }
+
+.entry-intro {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--muted);
+  margin-bottom: 24px;
+  font-style: italic;
+}
+
+/* ── Board + moves layout ── */
+.study-layout {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.board-wrap { flex-shrink: 0; }
+
+.board-coords-wrap { position: relative; }
+.board-labels-files {
+  display: flex;
+  padding-left: 18px;
+  margin-top: 4px;
+}
+.board-labels-files span,
+.board-labels-ranks span {
+  font-size: 9px;
+  font-family: 'Source Code Pro', monospace;
+  color: var(--muted2);
+  text-align: center;
+}
+.board-labels-files span { width: var(--sq); }
+.board-labels-ranks {
+  position: absolute;
+  left: 0; top: 0;
+  display: flex;
+  flex-direction: column;
+}
+.board-labels-ranks span { height: var(--sq); line-height: var(--sq); }
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(8, var(--sq));
+  grid-template-rows: repeat(8, var(--sq));
+  border: 1px solid var(--border2);
+}
+.sq {
+  width: var(--sq);
+  height: var(--sq);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  line-height: 1;
+  cursor: pointer;
+  transition: filter .1s;
+  position: relative;
+  user-select: none;
+}
+.sq.light { background: var(--light-sq); }
+.sq.dark  { background: var(--dark-sq); }
+.sq.hl { box-shadow: inset 0 0 0 3px rgba(143,184,122,.7); }
+.sq:hover { filter: brightness(1.08); }
+.piece { pointer-events: none; }
+
+/* ── Move panel ── */
+.move-panel {
+  flex: 1;
+  min-width: 0;
+}
+.move-nav {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.mv-btn {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .1s;
+  line-height: 1;
+}
+.mv-btn:hover { background: var(--border2); }
+.mv-ctr {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: 'Source Code Pro', monospace;
+  padding: 5px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  align-self: center;
+}
+
+.move-list-inner { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow-y: auto; }
+.mp { display: flex; align-items: center; gap: 3px; }
+.mn { font-size: 11px; color: var(--muted2); font-family: 'Source Code Pro', monospace; min-width: 22px; text-align: right; padding-right: 3px; }
+.mb {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text);
+  font-family: 'Source Code Pro', monospace;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+  min-width: 60px;
+  text-align: left;
+  transition: background .1s;
+}
+.mb:hover { background: var(--bg3); border-color: var(--border); }
+.mb.active {
+  background: rgba(143,184,122,.12);
+  border-color: rgba(143,184,122,.5);
+  color: var(--accent2);
+}
+
+/* ── Comment box ── */
+.comment-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  font-style: italic;
+  min-height: 54px;
+}
+.comment-box.empty { color: var(--muted2); font-style: normal; font-size: 12px; }
+
+/* ── Divider ── */
+.entry-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0 0 64px;
+}
+
+/* ── Block types ── */
+.block { margin-bottom: 28px; }
+.block-text { font-size: 15px; line-height: 1.85; color: var(--text); max-width: 620px; }
+.block-games { background: var(--bg2); border: 1px solid var(--border2); border-radius: 6px; padding: 14px 18px; max-width: 480px; }
+.block-games-label { font-size: 10px; font-family: 'Source Code Pro', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.game-link { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); text-decoration: none; color: var(--text); font-size: 13px; transition: color .15s; font-family: 'Lora', serif; }
+.game-link:last-child { border-bottom: none; }
+.game-link:hover { color: var(--accent); }
+.game-link::before { content: '♟'; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.game-link .game-meta { font-size: 11px; font-family: 'Source Code Pro', monospace; color: var(--muted); margin-left: auto; }
+.block-line { border: 1px solid var(--border2); border-radius: 6px; overflow: hidden; margin-bottom: 28px; }
+.block-line-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.block-line-label { font-size: 13px; font-family: 'Source Code Pro', monospace; color: var(--text); }
+.popularity-bar-wrap { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.popularity-pct { font-size: 11px; font-family: 'Source Code Pro', monospace; color: var(--accent); min-width: 32px; text-align: right; }
+.popularity-bar { width: 80px; height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden; }
+.popularity-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+.block-line-body { padding: 16px; background: var(--bg); }
+
+/* ── Empty state ── */
+.empty-state {
+  text-align: center;
+  padding: 80px 40px;
+  color: var(--muted);
+}
+.empty-state .big { font-size: 48px; margin-bottom: 16px; }
+.empty-state p { font-size: 14px; line-height: 1.8; }
+.empty-state code {
+  font-family: 'Source Code Pro', monospace;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+footer {
+  border-top: 1px solid var(--border);
+  padding: 20px 48px;
+  font-size: 11px;
+  color: var(--muted2);
+  font-family: 'Source Code Pro', monospace;
+  display: flex;
+  justify-content: space-between;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="site-title">Chess Notes</div>
+  <div class="site-sub">opening theory · personal analysis · study lines</div>
+</header>
+
+<div class="container">
+  <nav id="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-label">Lines</div>
+      <!-- populated by JS -->
+    </div>
+  </nav>
+
+  <main id="entries-main">
+    <!-- populated by JS -->
+  </main>
+</div>
+
+<footer>
+  <span>chess-notes</span>
+  <span id="entry-count">0 lines</span>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     YOUR CHESS LINES — add entries here using the editor tool
+     Each entry looks like:
+     {
+       id: "unique-id",
+       title: "Opening Name",
+       tags: ["opening"],        // opening | tactics | endgame | study
+       date: "2024-01-01",
+       intro: "A note about this line...",
+       moves: [
+         { san: "e4",  comment: "Central control." },
+         { san: "c5",  comment: "The Sicilian." },
+         ...
+       ]
+     }
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+const LINES = [
+  {
+    id: "sicilian-open-dragon",
+    title: "Accelerated Sicilian Dragon — Exchange Variation",
+    tags: ["opening"],
+    date: "2025-03-14",
+    blocks: [
+      { type: "text", content: "The Open Sicillian is one of the sharpest, most deeply studied openings in chess, as well as being incredibly common. The most common line goes: 1. e4 c5 2. Nf3 Nc6 3. d4 cdx4 4. Ndx4 starting the iconic exchange variation of the accelerated sicillian dragon" },
+
+      { type: "line", label: "Starting Position", popularity: "44%", moves: [
+        { san: "e4",   comment: "White stakes the center" },
+        { san: "c5",   comment: "Black responds with the sicillian" },
+        { san: "Nf3",  comment: "White develops knight to f3 attempting to control critical squares such as e5 and d4" },
+        { san: "Nc6",   comment: "Black develops knight to c6 equalizing pressure on e5 and d4" },
+        { san: "d4",   comment: "White chooses an early central break with d4 attempting to play agressive" },
+        { san: "cxd4", comment: "Black exchanges immediately not letting white's pawn on d4 advance" },
+        { san: "Nxd4", comment: "White recaptures with the knight not letting blacks pawn on d4 progress or be protected" },
+        { san: "g6",  comment: "Black plays g6 to start to fienchetto the bishop on f7 attemping to control the diagnol from affar " },
+        { san: "Nxc6",  comment: "White captures the knight on c6 attemping to ruin the pawn structure as well as gaining a tempo on the queen" },
+        { san: "bxc6",   comment: "Black captures with the outside pawn on g7 making sure they still in the future they can still command the center, as well as having an open diagnol on the g file" }
+       
+        
+      ]},
+
+      { type: "text", content: "Before we delve into the theory lets first see some masters play this exact line the games will go as following: 1. Vovk, Andrey (2512) vs Degraeve, Jean Marc (2573) 2. IM Ucitel (2804) vs chessplay8 (2819) 3. Kalogeris (2427) vs Golizadeh (2456) " },
+
+      { type: "line", label: "Vovk, Andrey (2512) vs Degraeve, Jean Marc (2573) Black wins by White resigning", popularity: "", moves: [
+        { san: "e4", comment: "" },
+        { san: "c5", comment: "" },
+        { san: "Nf3", comment: "" },
+        { san: "Nc6", comment: "" },
+        { san: "d4", comment: "" },
+        { san: "cxd4", comment: "" },
+        { san: "Nxd4", comment: "" },
+        { san: "g6", comment: "" },
+        { san: "Nxc6", comment: "" },
+        { san: "bxc6", comment: "" },
+        { san: "Qd4", comment: "" },
+        { san: "Nf6", comment: "" },
+        { san: "e5", comment: "" },
+        { san: "Nd5", comment: "" },
+        { san: "e6", comment: "" },
+        { san: "Nf6", comment: "" },
+        { san: "exd7+", comment: "" },
+        { san: "Bxd7", comment: "" },
+        { san: "Bc4", comment: "" },
+        { san: "Bg7", comment: "" },
+        { san: "O-O", comment: "" },
+        { san: "O-O", comment: "" },
+        { san: "Qh4", comment: "" },
+        { san: "Rb8", comment: "" },
+        { san: "Bb3", comment: "" },
+        { san: "a5", comment: "" },
+        { san: "a3", comment: "" },
+        { san: "Rb5", comment: "" },
+        { san: "Nc3", comment: "" },
+        { san: "Rh5", comment: "" },
+        { san: "Qg3", comment: "" },
+        { san: "Nd5", comment: "" },
+        { san: "Ne4", comment: "" },
+        { san: "Qb6", comment: "" },
+        { san: "Qf3", comment: "" },
+        { san: "Rf5", comment: "" },
+        { san: "Qd3", comment: "" },
+        { san: "Bc8", comment: "" },
+        { san: "Ng3", comment: "" },
+        { san: "Re5", comment: "" },
+        { san: "Qf3", comment: "" },
+        { san: "a4", comment: "" },
+        { san: "Bc4", comment: "" },
+        { san: "Ba6", comment: "" },
+        { san: "Bxa6", comment: "" },
+        { san: "Qxa6", comment: "" },
+        { san: "Bd2", comment: "" },
+        { san: "Qc4", comment: "" },
+        { san: "Rfc1", comment: "" },
+        { san: "Re6", comment: "" },
+        { san: "Rab1", comment: "" },
+        { san: "Ra8", comment: "" },
+        { san: "b3", comment: "" },
+        { san: "Qd4", comment: "" },
+        { san: "Rd1", comment: "" },
+        { san: "axb3", comment: "" },
+        { san: "Qxb3", comment: "" },
+        { san: "h5", comment: "" },
+        { san: "Bb4", comment: "" },
+        { san: "Qf4", comment: "" },
+        { san: "Bd2", comment: "" },
+        { san: "Qa4", comment: "" },
+        { san: "c4", comment: "" },
+        { san: "Qxb3", comment: "" },
+        { san: "Rxb3", comment: "" },
+        { san: "Nf6", comment: "" },
+        { san: "Re1", comment: "" },
+        { san: "Rxe1+", comment: "" },
+        { san: "Bxe1", comment: "" },
+        { san: "c5", comment: "" },
+        { san: "Nf1", comment: "" },
+        { san: "Ne4", comment: "" },
+        { san: "Ne3", comment: "" },
+        { san: "Nd6", comment: "" },
+        { san: "Bc3", comment: "" },
+        { san: "Bd4", comment: "" },
+        { san: "Bxd4", comment: "" },
+        { san: "cxd4", comment: "" },
+        { san: "Nd5", comment: "" },
+        { san: "Nxc4", comment: "" },
+        { san: "Nxe7+", comment: "" },
+        { san: "Kf8", comment: "" },
+        { san: "Nc6", comment: "" },
+        { san: "Nxa3", comment: "" },
+        { san: "Kf1", comment: "" },
+        { san: "Nc2", comment: "" },
+        { san: "Rd3", comment: "" },
+        { san: "Ra6", comment: "" },
+        { san: "Ne5", comment: "" },
+        { san: "Rd6", comment: "" }
+      ]},
+
+{ type: "line", label: "IM Ucitel (2804) vs chessplay8 (2819) White wins by Black resigning", popularity: "", moves: [
+        { san: "e4", comment: "" },
+        { san: "c5", comment: "" },
+        { san: "Nf3", comment: "" },
+        { san: "Nc6", comment: "" },
+        { san: "d4", comment: "" },
+        { san: "cxd4", comment: "" },
+        { san: "Nxd4", comment: "" },
+        { san: "g6", comment: "" },
+        { san: "Nxc6", comment: "" },
+        { san: "bxc6", comment: "" },
+        { san: "Qd4", comment: "" },
+        { san: "Nf6", comment: "" },
+        { san: "e5", comment: "" },
+        { san: "Nd5", comment: "" },
+        { san: "c4", comment: "" },
+        { san: "Qb6", comment: "" },
+        { san: "Qxb6", comment: "" },
+        { san: "Nxb6", comment: "" },
+        { san: "Nc3", comment: "" },
+        { san: "Bg7", comment: "" },
+        { san: "Bf4", comment: "" },
+        { san: "O-O", comment: "" },
+        { san: "O-O-O", comment: "" },
+        { san: "f6", comment: "" },
+        { san: "c5", comment: "" },
+        { san: "fxe5", comment: "" },
+        { san: "Bg5", comment: "" },
+        { san: "Nd5", comment: "" },
+        { san: "Nxd5", comment: "" },
+        { san: "cxd5", comment: "" },
+        { san: "Bxe7", comment: "" },
+        { san: "Rf7", comment: "" },
+        { san: "Bd6", comment: "" },
+        { san: "Rxf2", comment: "" },
+        { san: "Rxd5", comment: "" },
+        { san: "Bb7", comment: "" },
+        { san: "Bc4", comment: "" },
+        { san: "Kh8", comment: "" },
+        { san: "Rxe5", comment: "" },
+        { san: "Raf8", comment: "" },
+        { san: "Rhe1", comment: "" },
+        { san: "Bxe5", comment: "" },
+        { san: "Bxe5+", comment: "" },
+        { san: "R8f6", comment: "" },
+        { san: "Rf1", comment: "" },
+        { san: "Rxf1+", comment: "" },
+        { san: "Bxf1", comment: "" },
+        { san: "Kg7", comment: "" },
+        { san: "Bb5", comment: "" },
+        { san: "Bc6", comment: "" },
+        { san: "Bxc6", comment: "" },
+        { san: "dxc6", comment: "" },
+        { san: "Kd2", comment: "" },
+        { san: "Kf7", comment: "" },
+        { san: "Bxf6", comment: "" },
+        { san: "Kxf6", comment: "" },
+        { san: "Kd3", comment: "" },
+        { san: "Ke5", comment: "" }
+      ]},
+
+            { type: "line", label: "Kalogeris (2427) vs Golizadeh (2456) Black wins by White resigning", popularity: "", moves: [
+        { san: "e4",    comment: "" },
+        { san: "c5",    comment: "" },
+        { san: "Nf3",   comment: "" },
+        { san: "g6",    comment: "" },
+        { san: "d4",    comment: "" },
+        { san: "cxd4",  comment: "" },
+        { san: "Nxd4",  comment: "" },
+        { san: "Nc6",   comment: "" },
+        { san: "Nxc6",  comment: "" },
+        { san: "bxc6",  comment: "" },
+        { san: "Qd4",   comment: "" },
+        { san: "Nf6",   comment: "" },
+        { san: "e5",    comment: "" },
+        { san: "Nd5",   comment: "" },
+        { san: "e6",    comment: "" },
+        { san: "f6",    comment: "" },
+        { san: "exd7+", comment: "" },
+        { san: "Bxd7",  comment: "" },
+        { san: "Be2",   comment: "" },
+        { san: "e5",    comment: "" },
+        { san: "Qc4",   comment: "" },
+        { san: "Bg7",   comment: "" },
+        { san: "O-O",   comment: "" },
+        { san: "Nb6",   comment: "" },
+        { san: "Qc5",   comment: "" },
+        { san: "Qe7",   comment: "" },
+        { san: "Qxe7+", comment: "" },
+        { san: "Kxe7",  comment: "" },
+        { san: "Be3",   comment: "" },
+        { san: "Rhd8",  comment: "" },
+        { san: "c4",    comment: "" },
+        { san: "Be6",   comment: "" },
+        { san: "b3",    comment: "" },
+        { san: "Kf7",   comment: "" },
+        { san: "Bf3",   comment: "" },
+        { san: "e4",    comment: "" },
+        { san: "Bxe4",  comment: "" },
+        { san: "f5",    comment: "" },
+        { san: "Bxc6",  comment: "" },
+        { san: "Bxa1",  comment: "" },
+        { san: "Bxa8",  comment: "" },
+        { san: "Rxa8",  comment: "" },
+        { san: "Na3",   comment: "" },
+        { san: "Be5",   comment: "" },
+        { san: "Nb5",   comment: "" },
+        { san: "a6",    comment: "" },
+        { san: "Nd4",   comment: "" },
+        { san: "Nd7",   comment: "" },
+        { san: "Nc6",   comment: "" },
+        { san: "Bf6",   comment: "" },
+        { san: "f4",    comment: "" },
+        { san: "Rc8",   comment: "" },
+        { san: "Na5",   comment: "" },
+        { san: "Bc3",   comment: "" },
+        { san: "Nb7",   comment: "" },
+        { san: "Rb8",   comment: "" },
+        { san: "Nd6+",  comment: "" },
+        { san: "Ke7",   comment: "" },
+        { san: "c5",    comment: "" },
+        { san: "Bb4",   comment: "" },
+        { san: "Rc1",   comment: "" },
+        { san: "Bxc5",  comment: "" },
+        { san: "Rxc5",  comment: "" },
+        { san: "Nxc5",  comment: "" },
+        { san: "Bxc5",  comment: "" },
+        { san: "Kd7",   comment: "" },
+        { san: "Kf2",   comment: "" },
+        { san: "a5",    comment: "" },
+        { san: "Ke3",   comment: "" },
+        { san: "a4",    comment: "" },
+        { san: "bxa4",  comment: "" },
+        { san: "Ra8",   comment: "" },
+        { san: "a3",    comment: "" },
+        { san: "Rxa4",  comment: "" },
+        { san: "Kd3",   comment: "" },
+        { san: "Kc6",   comment: "" },
+        { san: "Bb4",   comment: "" },
+        { san: "Rxb4",  comment: "" },
+        { san: "axb4",  comment: "" },
+        { san: "Kxd6",  comment: "" },
+        { san: "Kd4",   comment: "" },
+        { san: "Bd5",   comment: "" },
+        { san: "g3",    comment: "" },
+        { san: "Be4",   comment: "" },
+        { san: "Kc4",   comment: "" },
+        { san: "h5",    comment: "" },
+        { san: "h4",    comment: "" },
+        { san: "Kc6",   comment: "" },
+        { san: "Kd4",   comment: "" },
+        { san: "Kd6",   comment: "" },
+        { san: "b5",    comment: "" },
+        { san: "Bb7",   comment: "" },
+        { san: "Kc4",   comment: "" },
+        { san: "Bd5+",  comment: "" },
+        { san: "Kd4",   comment: "" },
+        { san: "Be6",   comment: "" },
+        { san: "b6",    comment: "" },
+        { san: "Bd5",   comment: "" },
+      ]},
+
+      { type: "text", content: "As seen in every game white solely plays Qd4 after  1. e4 c5 2. Nf3 Nc6 3. d4 cxd4 4. Nxd4 g6 5. Nxc6 bxc6 this is because very early on whtie wins tempo by immediately attacking the black rook while also delaying the black bishop from being able to fianchetto. In addition to this white always uses the e4 pawn in order to pressure the black king and bait out a response, normally this comes with an additional threat on the knight commonly placed on f6 " },
+
+      { type: "text", content: "Because of this agressive start to the game its ideal that both black and white know how to play it properly, so without further to do lets get onto the theory." },
+
+        { type: "line", label: "Starting Position", popularity: "44%", moves: [
+        { san: "e4",   comment: "White stakes the center" },
+        { san: "c5",   comment: "Black responds with the sicillian" },
+        { san: "Nf3",  comment: "White develops knight to f3 attempting to control critical squares such as e5 and d4" },
+        { san: "Nc6",   comment: "Black develops knight to c6 equalizing pressure on e5 and d4" },
+        { san: "d4",   comment: "White chooses an early central break with d4 attempting to play agressive" },
+        { san: "cxd4", comment: "Black exchanges immediately not letting white's pawn on d4 advance" },
+        { san: "Nxd4", comment: "White recaptures with the knight not letting blacks pawn on d4 progress or be protected" },
+        { san: "g6",  comment: "Black plays g6 to start to fienchetto the bishop on f7 attemping to control the diagnol from affar " },
+        { san: "Nxc6",  comment: "White captures the knight on c6 attemping to ruin the pawn structure as well as gaining a tempo on the queen" },
+        { san: "bxc6",   comment: "Black captures with the outside pawn on g7 making sure they still in the future they can still command the center, as well as having an open diagnol on the g file" }
+       
+        
+      ]},
+
+      { type: "text", content: "After the opening moves, there are several possible continuations for both sides. Here are the most common in order: Qd4 (my favorite) 57%, Nc3 13%, Bc4 11%, Bd3 7%, c4 3%, and Bd2 2%" },
+
+      { type: "text", content: "Because of how common Qd4 is in this opening we will mostly focus on continuations after qd4, heres a anotated game to display how dangerous it can get for black " },
+
+          { type: "line", label: "King loses casteling rights 9 moves in", popularity: "", moves: [
+       { san: "e4",   comment: "White stakes the center" },
+        { san: "c5",   comment: "Black responds with the sicillian" },
+        { san: "Nf3",  comment: "White develops knight to f3 attempting to control critical squares such as e5 and d4" },
+        { san: "Nc6",   comment: "Black develops knight to c6 equalizing pressure on e5 and d4" },
+        { san: "d4",   comment: "White chooses an early central break with d4 attempting to play agressive" },
+        { san: "cxd4", comment: "Black exchanges immediately not letting white's pawn on d4 advance" },
+        { san: "Nxd4", comment: "White recaptures with the knight not letting blacks pawn on d4 progress or be protected" },
+        { san: "g6",  comment: "Black plays g6 to start to fienchetto the bishop on f7 attemping to control the diagnol from affar " },
+        { san: "Nxc6",  comment: "White captures the knight on c6 attemping to ruin the pawn structure as well as gaining a tempo on the queen" },
+        { san: "bxc6",   comment: "Black captures with the outside pawn on g7 making sure they still in the future they can still command the center, as well as having an open diagnol on the g file" },
+        { san: "Qd4", comment: "White plays d4 winning an early tempo on the black position by both threating the rook and threatning to progress the white pawn" },
+        { san: "Nf6", comment: "Black plays f6 to develop the knight while blocking the queens vision over the rook " },
+        { san: "e5", comment: "White plays e5 threatning the black knight forcing it to move" },
+        { san: "Nd5", comment: "Black moves to d5 getting out the way of the white pawn on e5 while also controlling the center" },
+        { san: "e6", comment: "White moves the pawn to e6 **note this is a critical moment, if you choose to play this wrong like shown in this game, your king can be in serious danger here the correct response is f6 preventing exf7 as shown which prevents the black king from casteling**" },
+        { san: "Nf6", comment: "! CRITICAL BLUNDER ! Black expects the pawn on e6 to take on d7, although any decent / compotent player would take on f7 in order to prevent the black kings casteling writes" },
+        { san: "exf7+", comment: "White pawn captures on f7, putting the black king in check again preventing it from casteling" },
+        { san: "Kxf7", comment: "Black captures the pawn on f7, although the engine shows 0.2 in blacks favor this position is very unintutive and allows for many checks that get tempo  " }
+      ]},
+    
+
+    ]
+  }
+];
+
+// ── Piece images — Lichess cburnett set ───────────────────────────────────
+const BASE = 'https://lichess1.org/assets/piece/cburnett/';
+const PIECE_SVG = {
+  wK:`<img src="${BASE}wK.svg" width="46" height="46">`,
+  wQ:`<img src="${BASE}wQ.svg" width="46" height="46">`,
+  wR:`<img src="${BASE}wR.svg" width="46" height="46">`,
+  wB:`<img src="${BASE}wB.svg" width="46" height="46">`,
+  wN:`<img src="${BASE}wN.svg" width="46" height="46">`,
+  wP:`<img src="${BASE}wP.svg" width="46" height="46">`,
+  bK:`<img src="${BASE}bK.svg" width="46" height="46">`,
+  bQ:`<img src="${BASE}bQ.svg" width="46" height="46">`,
+  bR:`<img src="${BASE}bR.svg" width="46" height="46">`,
+  bB:`<img src="${BASE}bB.svg" width="46" height="46">`,
+  bN:`<img src="${BASE}bN.svg" width="46" height="46">`,
+  bP:`<img src="${BASE}bP.svg" width="46" height="46">`,
+};
+
+// ── Minimal chess engine (FEN → board array, apply SAN) ───────────────────
+function fenToBoard(fen) {
+  const rows = fen.split(' ')[0].split('/');
+  const board = [];
+  for (const row of rows) {
+    const rank = [];
+    for (const ch of row) {
+      if ('12345678'.includes(ch)) for (let i = 0; i < +ch; i++) rank.push(null);
+      else {
+        const color = ch === ch.toUpperCase() ? 'w' : 'b';
+        rank.push(color + ch.toUpperCase());
+      }
+    }
+    board.push(rank);
+  }
+  return board;
+}
+
+function boardToFen(board, turn) {
+  return board.map(rank => {
+    let s = '', empty = 0;
+    for (const sq of rank) {
+      if (!sq) { empty++; }
+      else {
+        if (empty) { s += empty; empty = 0; }
+        const ch = sq[1];
+        s += sq[0] === 'w' ? ch : ch.toLowerCase();
+      }
+    }
+    if (empty) s += empty;
+    return s;
+  }).join('/') + ' ' + turn + ' KQkq - 0 1';
+}
+
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+// Very lightweight SAN applier — handles all normal moves for opening lines
+function applyMove(board, san, turn) {
+  const b = board.map(r => [...r]);
+  const enemy = turn === 'w' ? 'b' : 'w';
+
+  // Strip check/mate symbols
+  let s = san.replace(/[+#!?]/g, '');
+
+  // Castling
+  if (s === 'O-O' || s === '0-0') {
+    const rank = turn === 'w' ? 7 : 0;
+    b[rank][4] = null; b[rank][7] = null;
+    b[rank][6] = turn + 'K'; b[rank][5] = turn + 'R';
+    return b;
+  }
+  if (s === 'O-O-O' || s === '0-0-0') {
+    const rank = turn === 'w' ? 7 : 0;
+    b[rank][4] = null; b[rank][0] = null;
+    b[rank][2] = turn + 'K'; b[rank][3] = turn + 'R';
+    return b;
+  }
+
+  // Promotion
+  let promoPiece = null;
+  if (s.includes('=')) {
+    promoPiece = turn + s.split('=')[1].toUpperCase();
+    s = s.split('=')[0];
+  }
+
+  const isCapture = s.includes('x');
+  s = s.replace('x', '');
+
+  // Destination square (last 2 chars)
+  const destFile = s.slice(-2, -1).charCodeAt(0) - 97;
+  const destRank = 8 - parseInt(s.slice(-1));
+
+  // Piece type
+  const pieceChar = s[0] === s[0].toUpperCase() && !'abcdefgh'.includes(s[0]) ? s[0] : 'P';
+  const piece = turn + pieceChar;
+
+  // Disambiguation hint
+  const hint = s.slice(pieceChar === 'P' ? 0 : 1, -2).replace('x','');
+
+  // Find the source square
+  let srcR = -1, srcF = -1;
+  for (let r = 0; r < 8 && srcR === -1; r++) {
+    for (let f = 0; f < 8 && srcR === -1; f++) {
+      if (b[r][f] !== piece) continue;
+      if (hint) {
+        if (!isNaN(hint)) { if (r !== 8 - parseInt(hint)) continue; }
+        else { if (f !== hint.charCodeAt(0) - 97) continue; }
+      }
+      if (canReach(b, r, f, destRank, destFile, piece, turn, isCapture)) {
+        srcR = r; srcF = f;
+      }
+    }
+  }
+
+  if (srcR === -1) return b; // move not found, return unchanged
+
+  // En passant
+  if (piece[1] === 'P' && isCapture && !b[destRank][destFile]) {
+    const epRank = turn === 'w' ? destRank + 1 : destRank - 1;
+    b[epRank][destFile] = null;
+  }
+
+  b[destRank][destFile] = promoPiece || piece;
+  b[srcR][srcF] = null;
+  return b;
+}
+
+function canReach(board, r, f, dr, df, piece, turn, isCapture) {
+  const type = piece[1];
+  const dr_ = dr - r, df_ = df - f;
+
+  if (type === 'P') {
+    const dir = turn === 'w' ? -1 : 1;
+    if (!isCapture) {
+      if (df_ !== 0) return false;
+      if (dr_ === dir && !board[dr][df]) return true;
+      const startRank = turn === 'w' ? 6 : 1;
+      if (r === startRank && dr_ === 2*dir && !board[r+dir][f] && !board[dr][df]) return true;
+    } else {
+      return dr_ === dir && Math.abs(df_) === 1;
+    }
+    return false;
+  }
+  if (type === 'N') return (Math.abs(dr_) === 2 && Math.abs(df_) === 1) || (Math.abs(dr_) === 1 && Math.abs(df_) === 2);
+  if (type === 'K') return Math.abs(dr_) <= 1 && Math.abs(df_) <= 1;
+  if (type === 'R') {
+    if (dr_ !== 0 && df_ !== 0) return false;
+    return clearPath(board, r, f, dr, df);
+  }
+  if (type === 'B') {
+    if (Math.abs(dr_) !== Math.abs(df_)) return false;
+    return clearPath(board, r, f, dr, df);
+  }
+  if (type === 'Q') {
+    if (dr_ !== 0 && df_ !== 0 && Math.abs(dr_) !== Math.abs(df_)) return false;
+    return clearPath(board, r, f, dr, df);
+  }
+  return false;
+}
+
+function clearPath(board, r, f, dr, df) {
+  const sr = Math.sign(dr - r), sf = Math.sign(df - f);
+  let cr = r + sr, cf = f + sf;
+  while (cr !== dr || cf !== df) {
+    if (board[cr][cf]) return false;
+    cr += sr; cf += sf;
+  }
+  return true;
+}
+
+// ── Render board ──────────────────────────────────────────────────────────
+function renderBoard(container, board, lastFrom, lastTo) {
+  container.innerHTML = '';
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((r + f) % 2 === 0 ? 'light' : 'dark');
+      const isHL = (r === lastFrom?.r && f === lastFrom?.f) || (r === lastTo?.r && f === lastTo?.f);
+      if (isHL) sq.classList.add('hl');
+      const piece = board[r][f];
+      if (piece && PIECE_SVG[piece]) {
+        const wrap = document.createElement('div');
+        wrap.className = 'piece';
+        wrap.innerHTML = PIECE_SVG[piece];
+        sq.appendChild(wrap);
+      }
+      container.appendChild(sq);
+    }
+  }
+}
+
+// ── Build a single line board widget ─────────────────────────────────────
+function buildLineWidget(moves) {
+  const states = [{ board: fenToBoard(START_FEN), from: null, to: null }];
+  let cur = fenToBoard(START_FEN), turn = 'w';
+  for (const mv of moves) {
+    const next = applyMove(cur, mv.san, turn);
+    let fr = null, to_ = null;
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      if (cur[r][f] && !next[r][f]) fr = {r,f};
+      if (!cur[r][f] && next[r][f]) to_ = {r,f};
+    }
+    states.push({ board: next, from: fr, to: to_ });
+    cur = next; turn = turn === 'w' ? 'b' : 'w';
+  }
+  let ply = 0;
+
+  const layout = document.createElement('div');
+  layout.className = 'study-layout';
+
+  // Board
+  const boardWrap = document.createElement('div');
+  boardWrap.className = 'board-wrap';
+  const grid = document.createElement('div');
+  grid.className = 'board-grid';
+  boardWrap.appendChild(grid);
+  layout.appendChild(boardWrap);
+
+  // Panel
+  const panel = document.createElement('div');
+  panel.className = 'move-panel';
+
+  const navRow = document.createElement('div');
+  navRow.className = 'move-nav';
+  ['⟨⟨','‹','›','⟩⟩'].forEach((lbl, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'mv-btn'; btn.textContent = lbl;
+    btn.addEventListener('click', () => {
+      if (i===0) goto(0); else if (i===1) goto(ply-1);
+      else if (i===2) goto(ply+1); else goto(moves.length);
+    });
+    navRow.appendChild(btn);
+  });
+  const ctr = document.createElement('span');
+  ctr.className = 'mv-ctr';
+  navRow.appendChild(ctr);
+  panel.appendChild(navRow);
+
+  const ml = document.createElement('div');
+  ml.className = 'move-list-inner';
+  for (let i = 0; i < moves.length; i += 2) {
+    const pair = document.createElement('div');
+    pair.className = 'mp';
+    const num = document.createElement('span');
+    num.className = 'mn';
+    num.textContent = (i/2+1) + '.';
+    pair.appendChild(num);
+    [i, i+1].forEach(j => {
+      if (!moves[j]) return;
+      const btn = document.createElement('button');
+      btn.className = 'mb'; btn.textContent = moves[j].san; btn.dataset.ply = j+1;
+      btn.addEventListener('click', () => goto(j+1));
+      pair.appendChild(btn);
+    });
+    ml.appendChild(pair);
+  }
+  panel.appendChild(ml);
+
+  const cmt = document.createElement('div');
+  cmt.className = 'comment-box empty';
+  panel.appendChild(cmt);
+  layout.appendChild(panel);
+
+  function goto(p) {
+    if (p < 0) p = 0; if (p > moves.length) p = moves.length;
+    ply = p;
+    const s = states[ply];
+    renderBoard(grid, s.board, s.from, s.to);
+    ctr.textContent = ply + ' / ' + moves.length;
+    ml.querySelectorAll('.mb').forEach(b => b.classList.toggle('active', +b.dataset.ply === ply));
+    const active = ml.querySelector('.mb.active');
+    if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (ply > 0 && moves[ply-1].comment) {
+      cmt.textContent = moves[ply-1].comment; cmt.classList.remove('empty');
+    } else if (ply === 0) {
+      cmt.textContent = 'Navigate moves to see annotations.'; cmt.classList.add('empty');
+    } else {
+      cmt.textContent = '—'; cmt.classList.add('empty');
+    }
+  }
+
+  // arrow key nav
+  layout.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') goto(ply-1);
+    if (e.key === 'ArrowRight') goto(ply+1);
+  });
+
+  goto(0);
+  return layout;
+}
+
+// ── Build a full entry from blocks ────────────────────────────────────────
+function buildEntry(entry, idx) {
+  const wrap = document.createElement('div');
+  wrap.className = 'entry';
+  wrap.id = entry.id;
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'entry-header';
+  hdr.innerHTML = `
+    <div class="entry-num">ENTRY ${String(idx+1).padStart(2,'0')}</div>
+    <div class="entry-title">${entry.title}</div>
+    <div class="entry-meta">
+      <span>${entry.date}</span>
+      ${entry.tags.map(t=>`<span class="tag ${t}">${t}</span>`).join('')}
+    </div>`;
+  wrap.appendChild(hdr);
+
+  // Render blocks in order
+  const blocks = entry.blocks || (entry.moves ? [{ type:'line', label:'', popularity:'', moves: entry.moves }] : []);
+
+  for (const block of blocks) {
+    const el = document.createElement('div');
+    el.className = 'block';
+
+    if (block.type === 'text') {
+      el.className += ' block-text';
+      el.textContent = block.content;
+
+    } else if (block.type === 'games') {
+      el.className += ' block-games';
+      const lbl = document.createElement('div');
+      lbl.className = 'block-games-label';
+      lbl.textContent = block.label || 'Reference games';
+      el.appendChild(lbl);
+      for (const g of block.games) {
+        const a = document.createElement('a');
+        a.className = 'game-link';
+        a.href = g.url || '#';
+        a.target = '_blank';
+        a.rel = 'noopener';
+        const name = document.createElement('span');
+        name.textContent = g.label;
+        a.appendChild(name);
+        if (g.result) {
+          const meta = document.createElement('span');
+          meta.className = 'game-meta';
+          meta.textContent = g.result;
+          a.appendChild(meta);
+        }
+        el.appendChild(a);
+      }
+
+    } else if (block.type === 'line') {
+      el.className = 'block block-line';
+      const hdrEl = document.createElement('div');
+      hdrEl.className = 'block-line-header';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'block-line-label';
+      labelEl.textContent = block.label || 'Line';
+      hdrEl.appendChild(labelEl);
+      if (block.popularity) {
+        const pct = parseInt(block.popularity);
+        hdrEl.innerHTML += `<div class="popularity-bar-wrap">
+          <div class="popularity-bar"><div class="popularity-fill" style="width:${pct}%"></div></div>
+          <span class="popularity-pct">${block.popularity}</span>
+        </div>`;
+      }
+      el.appendChild(hdrEl);
+      const body = document.createElement('div');
+      body.className = 'block-line-body';
+      body.appendChild(buildLineWidget(block.moves));
+      el.appendChild(body);
+    }
+
+    wrap.appendChild(el);
+  }
+
+  return wrap;
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+const main = document.getElementById('entries-main');
+const nav = document.querySelector('#sidebar-nav .nav-section');
+
+if (LINES.length === 0) {
+  main.innerHTML = `<div class="empty-state"><div class="big">♟</div><p>No entries yet.</p></div>`;
+} else {
+  LINES.forEach((line, i) => {
+    const link = document.createElement('button');
+    link.className = 'nav-item';
+    link.innerHTML = line.title + (line.tags[0] ? `<span class="nav-tag">${line.tags[0]}</span>` : '');
+    link.addEventListener('click', () => {
+      document.getElementById(line.id)?.scrollIntoView({ behavior: 'smooth' });
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      link.classList.add('active');
+    });
+    nav.appendChild(link);
+    main.appendChild(buildEntry(line, i));
+    if (i < LINES.length - 1) {
+      const hr = document.createElement('hr');
+      hr.className = 'entry-divider';
+      main.appendChild(hr);
+    }
+  });
+  document.querySelector('.nav-item')?.classList.add('active');
+}
+
+document.getElementById('entry-count').textContent = LINES.length + (LINES.length === 1 ? ' entry' : ' entries');
+</script>
+</body>
+</html>
