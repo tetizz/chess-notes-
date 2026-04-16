@@ -638,7 +638,7 @@ body.editor-page-open > footer {
 .add-block-btn:hover { color: var(--text2); background: var(--bg4); border-color: var(--border2); }
 
 /* Editor board input */
-.ed-board-shell { display:flex; flex-direction:column; gap:10px; padding:10px; background:var(--bg3); border:1px solid var(--border); border-radius:4px; }
+.ed-board-shell { --board-input-size: 320px; --board-input-sq: calc(var(--board-input-size) / 8); display:flex; flex-direction:column; gap:10px; padding:10px; background:var(--bg3); border:1px solid var(--border); border-radius:4px; }
 .ed-board-top { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 .ed-board-status { font-size:11px; color:var(--muted); }
 .ed-board-tools { display:flex; gap:6px; flex-wrap:wrap; }
@@ -665,10 +665,14 @@ body.editor-page-open > footer {
 }
 .ed-board-btn { pointer-events:auto; touch-action:manipulation; }
 .ed-board-btn > * { pointer-events:none; }
-.ed-board-shell .board-coords { grid-template-columns: 16px 320px; grid-template-rows: 320px 16px; }
-.ed-board-shell .board-grid { grid-template-columns: repeat(8,40px); grid-template-rows: repeat(8,40px); width:320px; height:320px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
-.ed-board-shell .sq { width:40px; height:40px; cursor:pointer; }
-.ed-board-shell .piece img { width:40px; height:40px; }
+.ed-board-shell .board-coords { grid-template-columns: 16px var(--board-input-size); grid-template-rows: var(--board-input-size) 16px; }
+.ed-board-shell .board-gwrap,
+.ed-board-shell .board-grid,
+.ed-board-shell .board-arrow-layer { width: var(--board-input-size); height: var(--board-input-size); }
+.ed-board-shell .board-grid { grid-template-columns: repeat(8,var(--board-input-sq)); grid-template-rows: repeat(8,var(--board-input-sq)); box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+.ed-board-shell .sq { width:var(--board-input-sq); height:var(--board-input-sq); cursor:pointer; }
+.ed-board-shell .piece img { width:var(--board-input-sq); height:var(--board-input-sq); }
+.ed-board-shell .eval-bar { height: var(--board-input-size); }
 .ed-board-shell .sq.drag-target { box-shadow: inset 0 0 0 2px rgba(126,168,196,.7); }
 .move-dot, .capture-ring {
   position:absolute;
@@ -778,9 +782,15 @@ body.editor-page-open > footer {
 .ed-board-hint { font-size:10px; color:var(--muted2); line-height:1.5; }
 .ed-board-shell .study-layout { align-items:flex-start; }
 .ed-board-shell .eval-shell { flex-shrink:0; }
+.practice-room .ed-board-shell {
+  --board-input-size: clamp(360px, min(48vw, calc(100vh - 360px)), 560px);
+}
 @media (max-width: 768px) {
   .ed-board-shell .study-layout { flex-direction:column; gap:10px; }
   .ed-board-shell .eval-wrap { height:auto; width:100%; }
+  .practice-room .ed-board-shell {
+    --board-input-size: min(calc(100vw - 100px), 420px);
+  }
 }
 
 /* Footer buttons */
