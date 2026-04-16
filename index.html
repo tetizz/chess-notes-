@@ -2427,6 +2427,18 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
   const block = {
     moves: (initialMoves || []).map(move => ({ san: move.san, comment: move.comment || '' }))
   };
+  const BRILLIANT_START_STORAGE_KEY = 'chess-notes-brilliant-start-position';
+  let scanStartMoves = (block.moves || []).map(move => ({ san: move.san, comment: move.comment || '' }));
+  if(!scanStartMoves.length){
+    try {
+      const saved = JSON.parse(localStorage.getItem(BRILLIANT_START_STORAGE_KEY) || 'null');
+      if(Array.isArray(saved?.moves) && saved.moves.length){
+        block.moves = saved.moves.map(move => ({ san: move.san, comment: move.comment || '' }));
+        scanStartMoves = block.moves.map(move => ({ san: move.san, comment: move.comment || '' }));
+        if(saved.label) label = saved.label;
+      }
+    } catch(_) {}
+  }
 
   const editor = document.createElement('div');
   editor.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
@@ -2490,6 +2502,41 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
   runBtn.className = 'hbtn primary-btn';
   runBtn.type = 'button';
   runBtn.textContent = 'Find in engine lines';
+  const backBtn = document.createElement('button');
+  backBtn.className = 'hbtn';
+  backBtn.type = 'button';
+  backBtn.textContent = 'Go back to starting position';
+  backBtn.disabled = !scanStartMoves.length;
+  backBtn.onclick = () => {
+    block.moves = scanStartMoves.map(move => ({ san: move.san, comment:'' }));
+    sanBox.value = scanStartMoves.map(move => move.san).filter(Boolean).join(' ');
+    engineValue.textContent = 'Updating engine line...';
+    engineValue.classList.add('empty');
+    renderBoardInput();
+    window.requestAnimationFrame(() => {
+      boardHost.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  };
+  const saveStartBtn = document.createElement('button');
+  saveStartBtn.className = 'hbtn';
+  saveStartBtn.type = 'button';
+  saveStartBtn.textContent = 'Save starting position';
+  saveStartBtn.onclick = () => {
+    const currentMoves = (block.moves || []).map(move => ({ san: move.san, comment:'' }));
+    try {
+      localStorage.setItem(BRILLIANT_START_STORAGE_KEY, JSON.stringify({
+        label,
+        moves: currentMoves
+      }));
+      scanStartMoves = currentMoves.map(move => ({ san: move.san, comment:'' }));
+      backBtn.disabled = !scanStartMoves.length;
+      status.textContent = currentMoves.length ? 'Starting position saved for Brilliant Finder.' : 'Empty starting position saved for Brilliant Finder.';
+      status.className = 'practice-status ok';
+    } catch(_) {
+      status.textContent = 'Could not save the starting position in this browser.';
+      status.className = 'practice-status err';
+    }
+  };
   const resetBtn = document.createElement('button');
   resetBtn.className = 'hbtn';
   resetBtn.type = 'button';
@@ -2502,6 +2549,8 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
     renderBoardInput();
   };
   actions.appendChild(runBtn);
+  actions.appendChild(backBtn);
+  actions.appendChild(saveStartBtn);
   actions.appendChild(resetBtn);
   card.appendChild(actions);
 
@@ -2524,6 +2573,8 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
     results.innerHTML = '';
     results.appendChild(resultsTitle);
     resultsTitle.style.display = 'none';
+    scanStartMoves = (block.moves || []).map(move => ({ san: move.san, comment:'' }));
+    backBtn.disabled = !scanStartMoves.length;
     status.textContent = 'Analyzing start position...';
     status.className = 'practice-status';
     try {
