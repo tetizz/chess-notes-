@@ -1112,6 +1112,20 @@ body.editor-page-open > footer {
       <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin-bottom:20px;">Available Theory</div>
       <div id="home-entry-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>
     </div>
+    <div style="border-top:1px solid var(--border);padding-top:40px;margin-bottom:40px;">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
+        <div>
+          <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin-bottom:8px;">ECO List</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7;max-width:560px;">Wikipedia ECO codes, opening names, and move lists loaded into a searchable reference panel.</div>
+        </div>
+        <button id="eco-reload-btn" class="hbtn" type="button" style="font-size:12px;">Reload ECO</button>
+      </div>
+      <div style="margin-bottom:14px;">
+        <input id="eco-search" type="search" placeholder="Search ECO code, opening, or move order" style="width:100%;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text2);font:inherit;">
+      </div>
+      <div id="eco-status" style="font-size:12px;color:var(--muted);margin-bottom:12px;">Loading ECO list…</div>
+      <div id="eco-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;max-height:420px;overflow:auto;padding-right:4px;"></div>
+    </div>
     <div style="border-top:1px solid var(--border);padding-top:40px;">
       <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin-bottom:20px;">How to Contribute</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;">
@@ -4569,6 +4583,132 @@ document.getElementById('map-close').addEventListener('click',()=>{
 renderView();
 
 // ─── Homepage ────────────────────────────────────────────────────────
+const ECO_SOURCE_URL = 'https://en.wikipedia.org/w/api.php?action=parse&page=List_of_ECO_codes&prop=text&formatversion=2&format=json&origin=*';
+let ECO_CACHE = null;
+let ECO_LOAD_PROMISE = null;
+
+function normalizeEcoText(text){
+  return String(text || '').replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function parseEcoEntriesFromHtml(html){
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  const table = doc.querySelector('table.wikitable');
+  if(!table) return [];
+
+  const rows = Array.from(table.querySelectorAll('tr'));
+  const out = [];
+  let currentCode = '';
+  let currentName = '';
+
+  rows.forEach(row => {
+    const cells = Array.from(row.children).filter(cell => /^(TH|TD)$/.test(cell.tagName));
+    if(!cells.length) return;
+    const texts = cells.map(cell => normalizeEcoText(cell.textContent));
+    if(!texts.some(Boolean)) return;
+
+    const codeMatch = texts[0]?.match(/^[A-E]\d{2}$/);
+    let code = currentCode;
+    let moves = '';
+    let name = '';
+    let article = '';
+
+    if(codeMatch){
+      code = texts[0];
+      moves = texts[1] || '';
+      name = texts[2] || '';
+      currentCode = code;
+      if(name) currentName = name;
+      article = cells[2]?.querySelector('a[href^="/wiki/"]')?.getAttribute('href') || '';
+    } else if(/^(1\.|[A-HKQNRBO0]/i.test(texts[0] || ''))){
+      moves = texts[0] || '';
+      name = texts[1] || currentName || '';
+      article = cells[1]?.querySelector('a[href^="/wiki/"]')?.getAttribute('href') || '';
+    } else {
+      return;
+    }
+
+    if(!code || !moves) return;
+    out.push({
+      code,
+      moves,
+      name: name || currentName || '',
+      articleUrl: article ? ('https://en.wikipedia.org' + article) : ''
+    });
+  });
+
+  return out;
+}
+
+async function loadEcoEntries(force=false){
+  if(ECO_CACHE && !force) return ECO_CACHE;
+  if(ECO_LOAD_PROMISE && !force) return ECO_LOAD_PROMISE;
+
+  ECO_LOAD_PROMISE = fetch(ECO_SOURCE_URL)
+    .then(res => {
+      if(!res.ok) throw new Error('ECO source unavailable');
+      return res.json();
+    })
+    .then(data => {
+      const html = data?.parse?.text || '';
+      const entries = parseEcoEntriesFromHtml(html);
+      if(!entries.length) throw new Error('No ECO entries found');
+      ECO_CACHE = entries;
+      return entries;
+    })
+    .finally(() => {
+      ECO_LOAD_PROMISE = null;
+    });
+
+  return ECO_LOAD_PROMISE;
+}
+
+function renderEcoList(entries, query=''){
+  const list = document.getElementById('eco-list');
+  const status = document.getElementById('eco-status');
+  if(!list || !status) return;
+
+  const q = normalizeEcoText(query).toLowerCase();
+  const filtered = !q ? entries : entries.filter(entry => {
+    const hay = [entry.code, entry.name, entry.moves].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+
+  list.innerHTML = '';
+  if(!filtered.length){
+    status.textContent = q ? 'No ECO entries matched that search.' : 'No ECO entries available.';
+    return;
+  }
+
+  status.textContent = `${filtered.length} ECO entries ${q ? 'matched' : 'loaded'} from Wikipedia.`;
+  filtered.slice(0, 250).forEach(entry => {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;gap:10px;';
+    const title = entry.name ? `${entry.code} · ${entry.name}` : entry.code;
+    const article = entry.articleUrl ? `<a href="${entry.articleUrl}" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--accent2);text-decoration:none;">Wikipedia article</a>` : '';
+    card.innerHTML = `<div style="font-size:13px;font-weight:700;color:var(--text2);line-height:1.4;">${title}</div><div style="font-size:12px;color:var(--text);line-height:1.7;font-family:'JetBrains Mono',monospace;">${entry.moves}</div>${article}`;
+    list.appendChild(card);
+  });
+
+  if(filtered.length > 250){
+    const more = document.createElement('div');
+    more.style.cssText = 'grid-column:1 / -1;font-size:12px;color:var(--muted);padding:4px 2px;';
+    more.textContent = `Showing first 250 of ${filtered.length} matching ECO entries. Refine your search to narrow it down.`;
+    list.appendChild(more);
+  }
+}
+
+async function ensureEcoList(force=false){
+  const status = document.getElementById('eco-status');
+  if(status) status.textContent = force ? 'Reloading ECO list…' : 'Loading ECO list…';
+  try {
+    const entries = await loadEcoEntries(force);
+    renderEcoList(entries, document.getElementById('eco-search')?.value || '');
+  } catch(err){
+    if(status) status.textContent = 'Could not load ECO data from Wikipedia right now.';
+  }
+}
+
 function openHome(){
   const overlay = document.getElementById('home-overlay');
   overlay.style.display = 'flex';
@@ -4585,6 +4725,7 @@ function openHome(){
     card.onclick = () => { closeHome(); document.getElementById(entry.id)?.scrollIntoView({behavior:'smooth'}); };
     list.appendChild(card);
   });
+  ensureEcoList(false);
 }
 function closeHome(){
   document.getElementById('home-overlay').style.display = 'none';
@@ -4598,6 +4739,8 @@ function closeContributors(){
 
 document.getElementById('home-btn').addEventListener('click', openHome);
 document.getElementById('contributors-btn').addEventListener('click', openContributors);
+document.getElementById('eco-search').addEventListener('input', ()=>renderEcoList(ECO_CACHE || [], document.getElementById('eco-search').value));
+document.getElementById('eco-reload-btn').addEventListener('click', ()=>ensureEcoList(true));
 
 // Show homepage on first load
 openHome();
