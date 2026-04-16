@@ -2074,7 +2074,7 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
 const BRILLIANT_SCAN_DEPTH = 10;
 const BRILLIANT_CONFIRM_DEPTH = 14;
 const BRILLIANT_REPLY_DEPTH = 10;
-const BRILLIANT_ENGINE_LINE_PLIES = 4;
+const BRILLIANT_ENGINE_LINE_PLIES = 20;
 const BRILLIANT_NEAR_BEST_CP = 45;
 const BRILLIANT_STABILITY_CP = 70;
 const BRILLIANT_REPLY_DROP_CP = 110;
@@ -2557,6 +2557,24 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
           const pvText = item.pvSan ? ` PV: ${item.pvSan}` : '';
           const fullLine = [...baseMoves, ...(item.path || []), item.san].filter(Boolean).join(' ');
           box.innerHTML = `<div class="engine-line-label">${esc(prefix + item.san)} | ${esc(item.reason)}</div><div class="engine-line-value">Eval ${formatBrilliantScore(item.score)} | best-gap ${formatBrilliantGap(item.bestGap)} | sacrifice value ${item.sacValue} | ${esc(replyText)}${esc(pvText)}</div>`;
+          const actionRow = document.createElement('div');
+          actionRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;';
+          const loadBtn = document.createElement('button');
+          loadBtn.className = 'hbtn';
+          loadBtn.type = 'button';
+          loadBtn.textContent = 'Load on board';
+          loadBtn.onclick = () => {
+            block.moves = fullLine.split(/\s+/).filter(Boolean).map(san => ({ san, comment:'' }));
+            sanBox.value = fullLine;
+            engineValue.textContent = 'Updating engine line...';
+            engineValue.classList.add('empty');
+            renderBoardInput();
+            window.requestAnimationFrame(() => {
+              boardHost.scrollIntoView({ behavior:'smooth', block:'start' });
+            });
+          };
+          actionRow.appendChild(loadBtn);
+          box.appendChild(actionRow);
           const movesLabel = document.createElement('div');
           movesLabel.className = 'engine-line-label';
           movesLabel.style.marginTop = '8px';
@@ -3519,8 +3537,8 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
 
 
 // ─── Eval / Stockfish ───────────────────────────────────────────────
-const STOCKFISH_WASM_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
-const STOCKFISH_ASM_URL = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js';
+const STOCKFISH_WASM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.7/src/stockfish.js';
+const STOCKFISH_ASM_URL = 'https://cdn.jsdelivr.net/npm/stockfish@18.0.7/src/stockfish.js';
 const ENGINE = {
   worker: null,
   ready: false,
