@@ -4632,7 +4632,7 @@ function parseEcoEntriesFromHtml(html){
       currentCode = code;
       if(name) currentName = name;
       article = cells[2]?.querySelector('a[href^="/wiki/"]')?.getAttribute('href') || '';
-    } else if(/^(1\.|[A-HKQNRBO0]/i.test(texts[0] || ''))){
+    } else if (/^(1\.|[A-HKQNRBO0])/i.test(texts[0] || '')) {
       moves = texts[0] || '';
       name = texts[1] || currentName || '';
       article = cells[1]?.querySelector('a[href^="/wiki/"]')?.getAttribute('href') || '';
