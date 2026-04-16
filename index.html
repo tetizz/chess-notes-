@@ -112,7 +112,8 @@ main { padding: 36px 48px; max-width: 920px; }
 .block-line { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 24px; }
 .block-line-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--bg3); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .block-line-label { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: -.01em; }
-.line-action-btn { margin-left: auto; }
+.line-action-group { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.line-action-btn { margin-left: 0; }
 .pop-wrap { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .pop-bar { width: 64px; height: 3px; background: var(--border2); border-radius: 2px; overflow: hidden; }
 .pop-fill { height: 100%; background: var(--accent); border-radius: 2px; }
@@ -1102,7 +1103,7 @@ body.editor-page-open > footer {
     <div style="margin-bottom:48px;">
       <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin-bottom:12px;">Open Source Theory</div>
       <div style="font-size:36px;font-weight:700;color:var(--text2);letter-spacing:-.03em;margin-bottom:16px;line-height:1.1;">Community-driven chess<br>opening theory.</div>
-      <div style="font-size:15px;color:var(--muted);line-height:1.8;max-width:560px;margin-bottom:28px;">A collaborative platform where anyone can contribute, edit, and expand chess opening theory. Built like Wikipedia, but for chess — free forever.</div>
+      <div style="font-size:15px;color:var(--muted);line-height:1.8;max-width:560px;margin-bottom:28px;">A collaborative platform where anyone can contribute, edit, and expand chess opening theory. Open, community-driven, and free forever.</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button onclick="closeHome()" class="hbtn primary-btn" style="font-size:13px;padding:9px 20px;">Browse Theory →</button>
         <a href="https://github.com/veefs/chess-notes-" target="_blank" class="hbtn" style="font-size:13px;padding:9px 20px;text-decoration:none;">GitHub</a>
@@ -1116,7 +1117,7 @@ body.editor-page-open > footer {
       <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
         <div>
           <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);font-weight:600;margin-bottom:8px;">ECO List</div>
-          <div style="font-size:13px;color:var(--muted);line-height:1.7;max-width:560px;">Wikipedia ECO codes, opening names, and move lists loaded into a searchable reference panel.</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.7;max-width:560px;">ECO codes, opening names, and move lists in a searchable reference panel.</div>
         </div>
         <button id="eco-reload-btn" class="hbtn" type="button" style="font-size:12px;">Reload ECO</button>
       </div>
@@ -1181,7 +1182,7 @@ body.editor-page-open > footer {
         <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);">
           <div style="width:40px;height:40px;border-radius:50%;background:rgba(224,85,85,.12);border:1px solid rgba(224,85,85,.25);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">⚙</div>
           <div style="flex:1;">
-            <div style="font-size:14px;font-weight:600;color:var(--text2);">absence</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text2);">Absence</div>
             <div style="font-size:12px;color:var(--muted);margin-top:2px;">Developer · UI improvements, Stockfish integration</div>
           </div>
           <span style="font-size:10px;padding:3px 10px;background:rgba(224,85,85,.1);border:1px solid rgba(224,85,85,.25);border-radius:99px;color:#e07070;font-weight:600;">Developer</span>
@@ -3426,6 +3427,55 @@ function renderMarkdown(raw){
   return html;
 }
 
+function uniqueList(values){
+  return Array.from(new Set((values || []).map(v => String(v || '').trim()).filter(Boolean)));
+}
+
+function buildEntryTitleFromLine(entry, block){
+  const sourceTitle = String(entry?.title || '').trim();
+  const lineLabel = String(block?.label || '').trim();
+  if(sourceTitle && lineLabel){
+    return lineLabel.toLowerCase().includes(sourceTitle.toLowerCase())
+      ? lineLabel
+      : `${sourceTitle} — ${lineLabel}`;
+  }
+  return lineLabel || sourceTitle || 'New Line Entry';
+}
+
+function buildLineEntry(entry, block){
+  const title = buildEntryTitleFromLine(entry, block);
+  const lineCopy = JSON.parse(JSON.stringify(block || { type:'line', label:'', popularity:'', moves:[] }));
+  const moveList = (lineCopy.moves || []).map(mv => mv.san).filter(Boolean);
+  const previewMoves = moveList.slice(0, 10).join(' ');
+  const previewSuffix = moveList.length > 10 ? ' ...' : '';
+  const overview = [
+    '## Overview',
+    entry?.title ? `Created from **${entry.title}**.` : 'Created from a saved line.',
+    lineCopy.popularity ? `Popularity: **${lineCopy.popularity}**.` : '',
+    previewMoves ? `Move order: \`${previewMoves}${previewSuffix}\`` : ''
+  ].filter(Boolean).join('\n\n');
+
+  return {
+    id: 'entry-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    title,
+    tags: uniqueList([...(entry?.tags || []), 'line']),
+    date: new Date().toISOString().slice(0, 10),
+    blocks: [
+      { type:'text', content: overview },
+      { type:'tabs', tabs: [{ label: lineCopy.label || 'Main Line', blocks: [lineCopy] }] }
+    ]
+  };
+}
+
+function createEntryFromLine(entry, block){
+  const newEntry = buildLineEntry(entry, block);
+  LINES.push(newEntry);
+  markUnsaved();
+  renderView();
+  openEd(LINES.length - 1);
+  toast('New entry created from line','ok');
+}
+
 // ─── View rendering ──────────────────────────────────────────────────
 // We need to stamp tab buttons with the same IDs used in the nav tree.
 // We do a pre-pass to assign IDs, then buildBlocks uses them.
@@ -3447,7 +3497,7 @@ function assignTabIds(blocks, nodeList){
   }
 }
 
-function buildBlocks(blocks, container){
+function buildBlocks(blocks, container, entry){
   for(const block of blocks){
     if(block.type==='text'){
       const el=document.createElement('div');el.className='block block-text';
@@ -3457,8 +3507,11 @@ function buildBlocks(blocks, container){
       const el=document.createElement('div');el.className='block block-line';
       const hdr=document.createElement('div');hdr.className='block-line-header';
       const lbl=document.createElement('span');lbl.className='block-line-label';lbl.textContent=block.label||'Line';hdr.appendChild(lbl);
-      const practiceBtn=document.createElement('button');practiceBtn.className='hbtn line-action-btn';practiceBtn.textContent='Practice';practiceBtn.onclick=()=>openPracticeSetup(block.moves||[], block.label||'Line');hdr.appendChild(practiceBtn);
       if(block.popularity){const pct=parseInt(block.popularity);const pw=document.createElement('div');pw.className='pop-wrap';pw.innerHTML=`<div class="pop-bar"><div class="pop-fill" style="width:${pct}%"></div></div><span class="pop-pct">${block.popularity}</span>`;hdr.appendChild(pw);}
+      const actionGroup=document.createElement('div');actionGroup.className='line-action-group';
+      const entryBtn=document.createElement('button');entryBtn.className='hbtn line-action-btn';entryBtn.textContent='New entry';entryBtn.onclick=()=>createEntryFromLine(entry, block);actionGroup.appendChild(entryBtn);
+      const practiceBtn=document.createElement('button');practiceBtn.className='hbtn line-action-btn';practiceBtn.textContent='Practice';practiceBtn.onclick=()=>openPracticeSetup(block.moves||[], block.label||'Line');actionGroup.appendChild(practiceBtn);
+      hdr.appendChild(actionGroup);
       el.appendChild(hdr);const body=document.createElement('div');body.className='block-line-body';body.appendChild(buildLineWidget(block.moves||[]));el.appendChild(body);container.appendChild(el);
     } else if(block.type==='tabs'){
       const wrap=document.createElement('div');wrap.className='block block-tabs';
@@ -3470,7 +3523,7 @@ function buildBlocks(blocks, container){
         btn.textContent=tab.label;
         if(tab._navId) btn.setAttribute('data-tab-nav-id', tab._navId);
         const panel=document.createElement('div');panel.className='tab-panel'+(i===0?' active':'');
-        buildBlocks(tab.blocks||[],panel);panels.push(panel);
+        buildBlocks(tab.blocks||[],panel,entry);panels.push(panel);
         btn.addEventListener('click',()=>{
           nav.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
           panels.forEach(p=>p.classList.remove('active'));
@@ -3490,7 +3543,7 @@ function buildEntry(entry, idx, tabTree){
   const wrap=document.createElement('div');wrap.className='entry';wrap.id=entry.id;
   const hdr=document.createElement('div');hdr.className='entry-header';
   hdr.innerHTML=`<div class="entry-eyebrow">ENTRY ${String(idx+1).padStart(2,'0')}</div><div class="entry-title">${esc(entry.title)}</div><div class="entry-meta"><span>${entry.date||''}</span>${(entry.tags||[]).map(t=>`<span class="tag ${t}">${t}</span>`).join('')}</div>`;
-  wrap.appendChild(hdr); buildBlocks(entry.blocks||[], wrap); return wrap;
+  wrap.appendChild(hdr); buildBlocks(entry.blocks||[], wrap, entry); return wrap;
 }
 
 // ─── Tree nav ────────────────────────────────────────────────────────
@@ -4632,7 +4685,7 @@ function parseEcoEntriesFromHtml(html){
       currentCode = code;
       if(name) currentName = name;
       article = cells[2]?.querySelector('a[href^="/wiki/"]')?.getAttribute('href') || '';
-    } else if (/^(1\.|[A-HKQNRBO0])/i.test(texts[0] || '')) {
+    } else if(/^(1\.|[A-HKQNRBO0]/i.test(texts[0] || ''))){
       moves = texts[0] || '';
       name = texts[1] || currentName || '';
       article = cells[1]?.querySelector('a[href^="/wiki/"]')?.getAttribute('href') || '';
@@ -4701,13 +4754,12 @@ function renderEcoList(entries, query=''){
     return;
   }
 
-  status.textContent = `${filtered.length} ECO entries ${q ? 'matched' : 'loaded'} from Wikipedia.`;
+  status.textContent = `${filtered.length} ECO entries ${q ? 'matched' : 'loaded'}.`;
   filtered.slice(0, 250).forEach(entry => {
     const card = document.createElement('div');
     card.style.cssText = 'padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;gap:10px;';
     const title = entry.name ? `${entry.code} · ${entry.name}` : entry.code;
-    const article = entry.articleUrl ? `<a href="${entry.articleUrl}" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--accent2);text-decoration:none;">Wikipedia article</a>` : '';
-    card.innerHTML = `<div style="font-size:13px;font-weight:700;color:var(--text2);line-height:1.4;">${title}</div><div style="font-size:12px;color:var(--text);line-height:1.7;font-family:'JetBrains Mono',monospace;">${entry.moves}</div>${article}`;
+    card.innerHTML = `<div style="font-size:13px;font-weight:700;color:var(--text2);line-height:1.4;">${title}</div><div style="font-size:12px;color:var(--text);line-height:1.7;font-family:'JetBrains Mono',monospace;">${entry.moves}</div>`;
     list.appendChild(card);
   });
 
@@ -4726,11 +4778,11 @@ async function ensureEcoList(force=false){
     const entries = await loadEcoEntries(force);
     renderEcoList(entries, document.getElementById('eco-search')?.value || '');
     const usingFallback = entries.length === ECO_FALLBACK.length && entries.every((entry, idx) => entry.code === ECO_FALLBACK[idx]?.code);
-    if(status && usingFallback) status.textContent = 'Loaded fallback ECO entries. Wikipedia import is unavailable right now.';
+    if(status && usingFallback) status.textContent = 'Loaded fallback ECO entries.';
   } catch(err){
     ECO_CACHE = ECO_FALLBACK.slice();
     renderEcoList(ECO_CACHE, document.getElementById('eco-search')?.value || '');
-    if(status) status.textContent = 'Loaded fallback ECO entries. Wikipedia import is unavailable right now.';
+    if(status) status.textContent = 'Loaded fallback ECO entries.';
   }
 }
 
