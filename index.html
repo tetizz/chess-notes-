@@ -864,6 +864,12 @@ body.editor-page-open > footer {
 .practice-room-sub { font-size: 12px; color: var(--muted); }
 .practice-room .study-layout { align-items: flex-start; }
 .practice-room .move-panel { max-width: min(100%, 440px); }
+.practice-strength { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg3); }
+.practice-strength-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.practice-strength-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.practice-strength-value { font-size: 14px; font-weight: 700; color: var(--text2); }
+.practice-strength-slider { width: 100%; accent-color: var(--accent); }
+.practice-strength-hint { font-size: 12px; color: var(--muted); line-height: 1.6; }
 .practice-status { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-left: 3px solid var(--accent2); border-radius: 0 var(--radius) var(--radius) 0; background: var(--bg3); color: var(--text); line-height: 1.6; font-size: 13px; }
 .practice-status.err { border-left-color: var(--danger); color: #f2b0b0; }
 .practice-status.ok { border-left-color: var(--success); }
@@ -1791,7 +1797,9 @@ function buildEditorBoardInput(block,sanBox,refreshComments,onEngineLineChange){
       }
     }
     applyHoverHighlight(hoverTarget);
-    drawArr(ac,lastFrom?lastFrom.r:-1,lastFrom?lastFrom.f:-1,lastTo?lastTo.r:-1,lastTo?lastTo.f:-1);
+    const arrowFrom = lastFrom ? (boardFlipped ? { r: 7 - lastFrom.r, f: 7 - lastFrom.f } : lastFrom) : null;
+    const arrowTo = lastTo ? (boardFlipped ? { r: 7 - lastTo.r, f: 7 - lastTo.f } : lastTo) : null;
+    drawArr(ac, arrowFrom ? arrowFrom.r : -1, arrowFrom ? arrowFrom.f : -1, arrowTo ? arrowTo.r : -1, arrowTo ? arrowTo.f : -1);
     if(badIndex<0) queueEditorEval(board, turn);
   }
 
@@ -2271,8 +2279,18 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   let dragHoldTimer = null;
   let pendingDragStart = null;
   let cleanupDone = false;
+  let practiceElo = 1600;
   const playerTurn = userColor;
   const engineTurn = userColor === 'w' ? 'b' : 'w';
+  const PRACTICE_MIN_ELO = 100;
+  const PRACTICE_MAX_ELO = 3200;
+  const practiceDepthFromElo = elo => Math.max(1, Math.min(40, Math.round(1 + ((elo - PRACTICE_MIN_ELO) / (PRACTICE_MAX_ELO - PRACTICE_MIN_ELO)) * 39)));
+  const practiceSkillFromElo = elo => Math.max(0, Math.min(20, Math.round(((elo - PRACTICE_MIN_ELO) / (PRACTICE_MAX_ELO - PRACTICE_MIN_ELO)) * 20)));
+  const practiceThinkMsFromElo = elo => Math.round(350 + ((elo - PRACTICE_MIN_ELO) / (PRACTICE_MAX_ELO - PRACTICE_MIN_ELO)) * 5650);
+  const practiceMultiPvFromElo = elo => {
+    const weakness = 1 - ((Math.max(PRACTICE_MIN_ELO, Math.min(PRACTICE_MAX_ELO, elo)) - PRACTICE_MIN_ELO) / (PRACTICE_MAX_ELO - PRACTICE_MIN_ELO));
+    return weakness > 0.8 ? 8 : weakness > 0.6 ? 6 : weakness > 0.35 ? 4 : 2;
+  };
 
   const layout = el('div','study-layout');
   const evalShell = el('div','eval-shell');
@@ -2311,6 +2329,23 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   coords.appendChild(rl); coords.appendChild(gw); coords.appendChild(fl); bw.appendChild(coords);
 
   const mp = el('div','move-panel');
+  const strengthBox = el('div','practice-strength');
+  const strengthTop = el('div','practice-strength-top');
+  const strengthLabel = el('div','practice-strength-label'); strengthLabel.textContent = 'Bot Difficulty';
+  const strengthValue = el('div','practice-strength-value');
+  strengthTop.appendChild(strengthLabel);
+  strengthTop.appendChild(strengthValue);
+  const strengthSlider = document.createElement('input');
+  strengthSlider.className = 'practice-strength-slider';
+  strengthSlider.type = 'range';
+  strengthSlider.min = String(PRACTICE_MIN_ELO);
+  strengthSlider.max = String(PRACTICE_MAX_ELO);
+  strengthSlider.step = '100';
+  strengthSlider.value = String(practiceElo);
+  const strengthHint = el('div','practice-strength-hint');
+  strengthBox.appendChild(strengthTop);
+  strengthBox.appendChild(strengthSlider);
+  strengthBox.appendChild(strengthHint);
   const nav = el('div','move-nav');
   const b1 = el('button','mv-btn'); b1.textContent='⏮';
   const b2 = el('button','mv-btn'); b2.textContent='◀';
@@ -2323,7 +2358,7 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   nav.appendChild(leftControls);
   const ml = el('div','move-list-inner');
   const status = el('div','practice-status');
-  mp.appendChild(nav); mp.appendChild(ml); mp.appendChild(status);
+  mp.appendChild(strengthBox); mp.appendChild(nav); mp.appendChild(ml); mp.appendChild(status);
   layout.appendChild(evalShell); layout.appendChild(bw); layout.appendChild(mp);
   card.appendChild(layout);
 
@@ -2337,6 +2372,12 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   function setPracticeStatus(text, kind=''){
     status.textContent = text;
     status.className = 'practice-status' + (kind ? ' ' + kind : '');
+  }
+
+  function renderPracticeStrength(){
+    const depth = practiceDepthFromElo(practiceElo);
+    strengthValue.textContent = `${practiceElo} Elo`;
+    strengthHint.textContent = `Depth ${depth} search. 3200 aims for depth 40, while 100 only looks 1 move deep and will miss stronger replies.`;
   }
 
   function currentState(){
@@ -2491,7 +2532,9 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
       }
     }
     applyHoverHighlight(hoverTarget);
-    drawArr(ac, state.from ? state.from.r : -1, state.from ? state.from.f : -1, state.to ? state.to.r : -1, state.to ? state.to.f : -1);
+    const from = state.from ? (flipped ? { r: 7 - state.from.r, f: 7 - state.from.f } : state.from) : null;
+    const to = state.to ? (flipped ? { r: 7 - state.to.r, f: 7 - state.to.f } : state.to) : null;
+    drawArr(ac, from ? from.r : -1, from ? from.f : -1, to ? to.r : -1, to ? to.f : -1);
   }
 
   function goto(nextPly){
@@ -2555,7 +2598,13 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
         return;
       }
       pushMove(res, 'engine');
-    }, ()=>{}, 1800);
+    }, ()=>{}, {
+      thinkMs: practiceThinkMsFromElo(practiceElo),
+      depth: practiceDepthFromElo(practiceElo),
+      skill: practiceSkillFromElo(practiceElo),
+      elo: practiceElo,
+      multiPv: practiceMultiPvFromElo(practiceElo)
+    });
   }
 
   function handleSquareClick(r, f){
@@ -2688,6 +2737,11 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   b3.onclick = ()=>goto(ply + 1);
   b4.onclick = ()=>goto(states.length - 1);
   flipBtn.onclick = ()=>{ flipped = !flipped; hoverTarget = null; drawBoard(); };
+  strengthSlider.oninput = ()=>{
+    practiceElo = +strengthSlider.value || 1600;
+    renderPracticeStrength();
+    setPracticeStatus(botThinking ? `Difficulty updated to ${practiceElo} Elo. Stockfish will use it on the next move.` : `Difficulty set to ${practiceElo} Elo.`);
+  };
 
   if(!cleanupDone){
     document.addEventListener('pointermove', globalPointerMove);
@@ -2698,6 +2752,7 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
 
   rebuildStates();
   renderMoveList();
+  renderPracticeStrength();
   goto(states.length - 1);
   return card;
 }
@@ -2843,6 +2898,80 @@ function cachePrincipalVariation(job, payload, pvMoves){
   }
 }
 
+function configureEngineForJob(job){
+  if(!ENGINE.worker) return;
+  if(job.kind === 'move'){
+    const skill = Math.max(0, Math.min(20, Math.round(job.skill ?? 20)));
+    ENGINE.worker.postMessage('setoption name UCI_AnalyseMode value false');
+    ENGINE.worker.postMessage('setoption name Skill Level value ' + skill);
+    ENGINE.worker.postMessage('setoption name MultiPV value ' + Math.max(1, Math.min(8, job.multiPv || 1)));
+  } else {
+    ENGINE.worker.postMessage('setoption name UCI_AnalyseMode value true');
+    ENGINE.worker.postMessage('setoption name Skill Level value 20');
+    ENGINE.worker.postMessage('setoption name MultiPV value 1');
+  }
+}
+
+function scoreMoveCandidateFromInfo(line){
+  const pvMatch = line.match(/\spv\s+([a-h][1-8][a-h][1-8][nbrq]?)/i);
+  if(!pvMatch) return null;
+
+  const multiPvMatch = line.match(/\bmultipv\s+(\d+)/i);
+  const mate = line.match(/score mate (-?\d+)/i);
+  const cp = line.match(/score cp (-?\d+)/i);
+  let score = null;
+
+  if(mate){
+    const raw = parseInt(mate[1], 10);
+    score = raw > 0 ? 100000 - Math.abs(raw) : -100000 + Math.abs(raw);
+  } else if(cp){
+    score = parseInt(cp[1], 10);
+  }
+
+  if(score === null || Number.isNaN(score)) return null;
+  return {
+    move: pvMatch[1],
+    score,
+    multipv: multiPvMatch ? parseInt(multiPvMatch[1], 10) : 1
+  };
+}
+
+function pickMoveForDifficulty(job, fallbackMove){
+  if(!job?.moveCandidates?.length) return fallbackMove;
+
+  const sorted = job.moveCandidates
+    .slice()
+    .sort((a, b) => b.score - a.score || a.multipv - b.multipv);
+  const unique = [];
+  const seen = new Set();
+  for(const cand of sorted){
+    if(!cand?.move || seen.has(cand.move)) continue;
+    seen.add(cand.move);
+    unique.push(cand);
+  }
+  if(!unique.length) return fallbackMove;
+
+  const elo = Math.max(100, Math.min(3200, job.elo || 3200));
+  const weakness = 1 - ((elo - 100) / 3100);
+  if(weakness <= 0.02) return unique[0].move;
+
+  const maxRank = unique.length - 1;
+  const targetRank = Math.round(weakness * maxRank);
+  const jitter = Math.max(1, Math.round(weakness * 2));
+  const minRank = Math.max(0, targetRank - jitter);
+  const maxRankWindow = Math.min(maxRank, targetRank + jitter);
+  const pickRank = Math.min(maxRank, Math.max(0, minRank + Math.floor(Math.random() * (maxRankWindow - minRank + 1))));
+  const picked = unique[pickRank]?.move || unique[0].move || fallbackMove;
+
+  if(weakness > 0.75 && unique[maxRank]?.move && Math.random() < 0.35){
+    return unique[maxRank].move;
+  }
+  if(weakness > 0.5 && unique.length >= 3 && Math.random() < 0.4){
+    return unique[Math.min(maxRank, pickRank + 1)]?.move || picked;
+  }
+  return picked;
+}
+
 function beginTimedSearch(job){
   if(!ENGINE.worker) return;
   if(ENGINE.searchTimer){
@@ -2852,14 +2981,20 @@ function beginTimedSearch(job){
 
   job.bestPv = [];
   job.lastPayload = null;
+  job.moveCandidates = [];
   job.onStatus('thinking');
   ENGINE.worker.postMessage('stop');
+  configureEngineForJob(job);
   ENGINE.worker.postMessage('position fen ' + job.fen);
-  ENGINE.worker.postMessage('go movetime ' + (job.thinkMs || ENGINE_SEARCH_MS));
+  if(job.kind === 'move' && job.depth){
+    ENGINE.worker.postMessage('go depth ' + job.depth);
+  } else {
+    ENGINE.worker.postMessage('go movetime ' + (job.thinkMs || ENGINE_SEARCH_MS));
+  }
 
   ENGINE.searchTimer = setTimeout(() => {
     finishCurrentSearch(ENGINE.mode === 'asm' ? 'saved (fallback)' : 'saved');
-  }, ENGINE_HARD_TIMEOUT_MS);
+  }, Math.max(ENGINE_HARD_TIMEOUT_MS, (job.thinkMs || ENGINE_SEARCH_MS) + 1200));
 }
 
 function handleEngineMsg(line){
@@ -2889,7 +3024,7 @@ function handleEngineMsg(line){
   if(line.startsWith('bestmove')){
     const bestmove = line.match(/^bestmove\s+(\S+)/);
     if(bestmove && ENGINE.current?.kind === 'move' && ENGINE.current.onMove){
-      ENGINE.current.onMove(bestmove[1]);
+      ENGINE.current.onMove(pickMoveForDifficulty(ENGINE.current, bestmove[1]));
     }
     if(bestmove && ENGINE.current?.lastPayload){
       const pv = ENGINE.current.bestPv?.length ? ENGINE.current.bestPv : [bestmove[1]];
@@ -2900,8 +3035,20 @@ function handleEngineMsg(line){
     return;
   }
 
-  if(!ENGINE.current || ENGINE.current.kind === 'move') return;
+  if(!ENGINE.current) return;
   const job = ENGINE.current;
+
+  if(job.kind === 'move'){
+    if(line.startsWith('info ') && line.includes(' score ') && line.includes(' pv ')){
+      const candidate = scoreMoveCandidateFromInfo(line);
+      if(candidate){
+        const idx = job.moveCandidates.findIndex(item => item.move === candidate.move);
+        if(idx >= 0) job.moveCandidates[idx] = candidate;
+        else job.moveCandidates.push(candidate);
+      }
+    }
+    return;
+  }
 
   if(line.startsWith('info ') && line.includes(' score ')){
     let payload = null;
@@ -2975,11 +3122,16 @@ function requestEval(fen, turn, onEval, onStatus, depth=18){
   flushEngineQueue();
 }
 
-function requestBestMove(fen, turn, onMove, onStatus=()=>{}, thinkMs=1800){
+function requestBestMove(fen, turn, onMove, onStatus=()=>{}, options={}){
   initEngine();
 
   ENGINE.queue = ENGINE.queue.filter(job => !(job.kind === 'move' && job.fen === fen));
-  const job = { id: ++ENGINE.latestJob, kind:'move', fen, turn, onMove, onStatus, thinkMs };
+  const thinkMs = typeof options === 'number' ? options : (options.thinkMs || 1800);
+  const depth = typeof options === 'object' ? options.depth : undefined;
+  const skill = typeof options === 'object' ? options.skill : undefined;
+  const elo = typeof options === 'object' ? options.elo : undefined;
+  const multiPv = typeof options === 'object' ? options.multiPv : undefined;
+  const job = { id: ++ENGINE.latestJob, kind:'move', fen, turn, onMove, onStatus, thinkMs, depth, skill, elo, multiPv };
   ENGINE.queue.push(job);
 
   if(!ENGINE.uciOk || !ENGINE.ready){
