@@ -2278,6 +2278,7 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   let dragGhost = null;
   let dragHoldTimer = null;
   let pendingDragStart = null;
+  let pendingPromotion = null;
   let cleanupDone = false;
   let practiceElo = 1600;
   const playerTurn = userColor;
@@ -2380,6 +2381,80 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     strengthHint.textContent = `Depth ${depth} search. 3200 aims for depth 40, while 100 only looks 1 move deep and will miss stronger replies.`;
   }
 
+  function clearPromotionOverlay(){
+    const ex = gw.querySelector('.promo-inline');
+    if(ex) ex.remove();
+  }
+
+  function renderPromotionOverlay(){
+    clearPromotionOverlay();
+    if(!pendingPromotion) return;
+
+    const targetSq = pendingPromotion.square || pendingPromotion.to;
+    const color = pendingPromotion.color || pendingPromotion.turn || 'w';
+    const overlay = el('div','promo-inline');
+
+    const addCancel = () => {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'promo-inline-cancel';
+      cancel.textContent = 'x';
+      cancel.title = 'Cancel promotion';
+      cancel.setAttribute('aria-label', 'Cancel promotion');
+      cancel.addEventListener('pointerup', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        pendingPromotion = null;
+        selected = null;
+        hoverTarget = null;
+        drawBoard();
+      });
+      cancel.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      overlay.appendChild(cancel);
+    };
+
+    if(color === 'b') addCancel();
+
+    ['Q','N','R','B'].forEach(pc => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'promo-inline-btn';
+      btn.title = {Q:'Queen',N:'Knight',R:'Rook',B:'Bishop'}[pc];
+      btn.setAttribute('aria-label', btn.title);
+      btn.innerHTML = `<img src="${BASE}${color}${pc}.svg" alt="${btn.title}">`;
+      btn.addEventListener('pointerup', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        finishPromotion(pc);
+      });
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      overlay.appendChild(btn);
+    });
+
+    if(color === 'w') addCancel();
+
+    if(getComputedStyle(gw).position === 'static') gw.style.position = 'relative';
+    const size = Math.min(gw.clientWidth || 0, gw.clientHeight || 0) || ((parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sq')) || 56) * 8);
+    const sq = size / 8;
+    const overlayHeight = sq * 4 + sq * 0.72;
+    const vis = flipped ? { r: 7 - targetSq.r, f: 7 - targetSq.f } : { r: targetSq.r, f: targetSq.f };
+
+    let left = vis.f * sq;
+    let top = color === 'w' ? (vis.r * sq) - (overlayHeight - sq) : (vis.r * sq);
+    left = Math.max(0, Math.min(left, size - sq));
+    top = Math.max(0, Math.min(top, size - overlayHeight));
+
+    overlay.style.left = left + 'px';
+    overlay.style.top = top + 'px';
+    gw.appendChild(overlay);
+  }
+
   function currentState(){
     return states[ply];
   }
@@ -2423,8 +2498,58 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     if(!state?.fen) return;
     const livePosition = ply === states.length - 1;
     const game = livePosition ? currentGame() : null;
-    if(livePosition && (botThinking || game?.turn() === engineTurn)) return;
+    if(pendingPromotion || (livePosition && (botThinking || game?.turn() === engineTurn))) return;
     requestEval(state.fen, state.turn, payload=>updateEvalUI(evalUi, payload), txt=>setEvalStatus(evalUi, txt), 18);
+  }
+
+  function finishPromotion(pieceCode){
+    if(!pendingPromotion || typeof Chess !== 'function') return;
+    const game = new Chess(pendingPromotion.fen);
+    const res = game.move({
+      from: coordsToSq(pendingPromotion.from.r, pendingPromotion.from.f),
+      to: coordsToSq(pendingPromotion.to.r, pendingPromotion.to.f),
+      promotion: String(pieceCode || 'Q').toLowerCase()
+    });
+    if(!res){
+      pendingPromotion = null;
+      selected = null;
+      hoverTarget = null;
+      drawBoard();
+      return;
+    }
+    pendingPromotion = null;
+    pushMove(res, 'player');
+  }
+
+  function tryPlayerMove(from, to){
+    const game = currentGame();
+    if(!game || botThinking || ply !== states.length - 1 || game.turn() !== playerTurn || game.game_over() || pendingPromotion) return false;
+    const fromSq = coordsToSq(from.r, from.f);
+    const toSq = coordsToSq(to.r, to.f);
+    const legal = (game.moves({ square: fromSq, verbose: true }) || []).find(mv => mv.to === toSq);
+    if(!legal) return false;
+
+    if(legal.flags && legal.flags.includes('p')){
+      pendingPromotion = {
+        fen: game.fen(),
+        turn: game.turn(),
+        color: game.turn(),
+        from: { r: from.r, f: from.f },
+        to: { r: to.r, f: to.f },
+        square: { r: to.r, f: to.f }
+      };
+      selected = null;
+      hoverTarget = null;
+      drawBoard();
+      return true;
+    }
+
+    const res = game.move({ from: fromSq, to: toSq, promotion: 'q' });
+    if(!res) return false;
+    selected = null;
+    hoverTarget = null;
+    pushMove(res, 'player');
+    return true;
   }
 
   function renderLegalMarkerLocal(sqEl, isCapture){
@@ -2535,6 +2660,7 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     const from = state.from ? (flipped ? { r: 7 - state.from.r, f: 7 - state.from.f } : state.from) : null;
     const to = state.to ? (flipped ? { r: 7 - state.to.r, f: 7 - state.to.f } : state.to) : null;
     drawArr(ac, from ? from.r : -1, from ? from.f : -1, to ? to.r : -1, to ? to.f : -1);
+    renderPromotionOverlay();
   }
 
   function goto(nextPly){
@@ -2559,6 +2685,10 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
       setPracticeStatus('Game over. Review the move list or close to practice again.', 'ok');
       return;
     }
+    if(pendingPromotion){
+      setPracticeStatus((playerTurn === 'w' ? 'White' : 'Black') + ' promotion - choose a piece.');
+      return;
+    }
     if(game.turn() === playerTurn){
       setPracticeStatus(`Your move as ${playerTurn === 'w' ? 'White' : 'Black'}.`);
     } else if(botThinking){
@@ -2573,6 +2703,7 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
 
   function pushMove(res, source){
     extraMoves.push({ san: res.san, comment: source === 'engine' ? 'Stockfish' : '' });
+    pendingPromotion = null;
     rebuildStates();
     renderMoveList();
     goto(states.length - 1);
@@ -2609,22 +2740,15 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
 
   function handleSquareClick(r, f){
     const game = currentGame();
-    if(!game || botThinking || ply !== states.length - 1 || game.turn() !== playerTurn || game.game_over() || dragState) return;
+    if(!game || botThinking || ply !== states.length - 1 || game.turn() !== playerTurn || game.game_over() || dragState || pendingPromotion) return;
     const piece = game.board()[r]?.[f];
     if(selected){
-      const fromSq = coordsToSq(selected.r, selected.f);
-      const toSq = coordsToSq(r, f);
-      const legal = (game.moves({ square: fromSq, verbose: true }) || []).find(mv => mv.to === toSq);
       if(piece && piece.color === playerTurn){
         selected = { r, f };
         drawBoard();
         return;
       }
-      if(!legal) return;
-      const res = game.move({ from: fromSq, to: toSq, promotion: legal.flags.includes('p') ? 'q' : undefined });
-      if(!res) return;
-      selected = null;
-      pushMove(res, 'player');
+      if(!tryPlayerMove(selected, { r, f })) return;
       return;
     }
     if(piece && piece.color === playerTurn){
@@ -2636,7 +2760,7 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
 
   function onSquarePointerDown(ev, r, f){
     const game = currentGame();
-    if(!game || botThinking || ply !== states.length - 1 || game.turn() !== playerTurn || game.game_over()) return;
+    if(!game || botThinking || ply !== states.length - 1 || game.turn() !== playerTurn || game.game_over() || pendingPromotion) return;
     if(ev.button !== 0) return;
     const piece = game.board()[r]?.[f];
     if(!piece || piece.color !== playerTurn) return;
@@ -2689,29 +2813,18 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     if(dragState){
       const from = dragState.from;
       const sq = squareFromPoint(ev.clientX, ev.clientY);
-      const game = currentGame();
-      const legalMoves = (selected && game) ? (game.moves({ square: coordsToSq(selected.r, selected.f), verbose: true }) || []) : [];
       removeGhost();
       dragState = null;
       hoverTarget = null;
       applyHoverHighlight(null);
-      if(!sq || sameSq(sq, from) || !game){
+      if(!sq || sameSq(sq, from)){
         drawBoard();
         return;
       }
-      const toSq = coordsToSq(sq.r, sq.f);
-      const legal = legalMoves.find(mv => mv.to === toSq);
-      if(!legal){
+      if(!tryPlayerMove(from, sq)){
         drawBoard();
         return;
       }
-      const res = game.move({ from: coordsToSq(from.r, from.f), to: toSq, promotion: legal.flags.includes('p') ? 'q' : undefined });
-      if(!res){
-        drawBoard();
-        return;
-      }
-      selected = null;
-      pushMove(res, 'player');
       return;
     }
     if(pendingDragStart && ev.pointerId === pendingDragStart.pointerId){
