@@ -2127,7 +2127,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     const capturedValue = pieceValue(res.captured);
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
     const recaptureExists = postMoveReplies.some(reply => reply.captured && reply.to === res.to);
-    const apparentSacValue = recaptureExists ? Math.max(0, movedPieceValue - capturedValue) : 0;
+    const apparentSacValue = recaptureExists && movedPieceValue > capturedValue ? (movedPieceValue - capturedValue) : 0;
     const sacValue = Math.max(immediateSacValue, apparentSacValue);
     const tacticalMove = !!res.captured || /\+|#/.test(res.san || '') || apparentSacValue > 0;
     if(sacValue < 1 && !tacticalMove) continue;
