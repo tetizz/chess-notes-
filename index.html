@@ -2380,6 +2380,9 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
   function maybeRequestEval(){
     const state = currentState();
     if(!state?.fen) return;
+    const livePosition = ply === states.length - 1;
+    const game = livePosition ? currentGame() : null;
+    if(livePosition && (botThinking || game?.turn() === engineTurn)) return;
     requestEval(state.fen, state.turn, payload=>updateEvalUI(evalUi, payload), txt=>setEvalStatus(evalUi, txt), 18);
   }
 
@@ -2499,7 +2502,6 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     const active = ml.querySelector('.mb.active');
     if(active) active.scrollIntoView({ block:'nearest', behavior:'smooth' });
     drawBoard();
-    maybeRequestEval();
 
     const game = currentGame();
     if(!game){
@@ -2521,7 +2523,9 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     } else {
       setPracticeStatus('Stockfish to move.');
       maybeBotMove();
+      return;
     }
+    maybeRequestEval();
   }
 
   function pushMove(res, source){
@@ -2529,7 +2533,6 @@ function buildPracticeRoom(seedMoves, label, userColor, closeRoom){
     rebuildStates();
     renderMoveList();
     goto(states.length - 1);
-    if(source === 'player') maybeBotMove();
   }
 
   function maybeBotMove(){
@@ -2932,13 +2935,18 @@ function handleEngineMsg(line){
 }
 
 function flushEngineQueue(){
-  if(!ENGINE.ready || !ENGINE.queue.length || !ENGINE.worker) return;
+  if(!ENGINE.ready || !ENGINE.queue.length || !ENGINE.worker || ENGINE.current) return;
 
-  const job = ENGINE.queue.pop();
-  ENGINE.queue.length = 0;
+  const moveIndex = ENGINE.queue.findIndex(job => job.kind === 'move');
+  const jobIndex = moveIndex >= 0 ? moveIndex : 0;
+  const job = ENGINE.queue.splice(jobIndex, 1)[0];
+  if(!job) return;
 
-  if(ENGINE.current && ENGINE.current.fen === job.fen){
-    return;
+  for(let i = ENGINE.queue.length - 1; i >= 0; i--){
+    const queued = ENGINE.queue[i];
+    if(queued.kind === 'eval' && queued.fen === job.fen){
+      ENGINE.queue.splice(i, 1);
+    }
   }
 
   ENGINE.current = job;
@@ -2955,6 +2963,7 @@ function requestEval(fen, turn, onEval, onStatus, depth=18){
 
   initEngine();
 
+  ENGINE.queue = ENGINE.queue.filter(job => !(job.kind === 'eval' && job.fen === fen));
   const job = { id: ++ENGINE.latestJob, kind:'eval', fen, turn, onEval, onStatus, depth, thinkMs: ENGINE_SEARCH_MS };
   ENGINE.queue.push(job);
 
@@ -2969,6 +2978,7 @@ function requestEval(fen, turn, onEval, onStatus, depth=18){
 function requestBestMove(fen, turn, onMove, onStatus=()=>{}, thinkMs=1800){
   initEngine();
 
+  ENGINE.queue = ENGINE.queue.filter(job => !(job.kind === 'move' && job.fen === fen));
   const job = { id: ++ENGINE.latestJob, kind:'move', fen, turn, onMove, onStatus, thinkMs };
   ENGINE.queue.push(job);
 
