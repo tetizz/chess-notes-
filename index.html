@@ -2108,9 +2108,9 @@ const BRILLIANT_TT = {
   bestLine: new Map(),
 };
 const BRILLIANT_MODE_CONFIGS = {
-  quick: { key:'quick', label:'Quick', scanDepth:10, confirmDepth:16, replyDepth:16, replyQuickDepth:8, continuationDepth:18, maxShortlist:6, maxDeepReplies:4, treeMaxPly:24, treeNodeCap:2500 },
-  deep: { key:'deep', label:'Deep', scanDepth:12, confirmDepth:20, replyDepth:20, replyQuickDepth:8, continuationDepth:22, maxShortlist:8, maxDeepReplies:6, treeMaxPly:80, treeNodeCap:12000 },
-  unlimited: { key:'unlimited', label:'Unlimited', scanDepth:14, confirmDepth:24, replyDepth:24, replyQuickDepth:10, continuationDepth:26, maxShortlist:10, maxDeepReplies:8, treeMaxPly:160, treeNodeCap:50000 }
+  quick: { key:'quick', label:'Quick', scanDepth:10, confirmDepth:16, replyDepth:16, replyQuickDepth:8, continuationDepth:18, maxShortlist:6, maxDeepReplies:4, treeMaxPly:24, treeNodeCap:2500, frontierWidth:2 },
+  deep: { key:'deep', label:'Deep', scanDepth:12, confirmDepth:20, replyDepth:20, replyQuickDepth:8, continuationDepth:22, maxShortlist:8, maxDeepReplies:6, treeMaxPly:80, treeNodeCap:12000, frontierWidth:3 },
+  unlimited: { key:'unlimited', label:'Unlimited', scanDepth:14, confirmDepth:24, replyDepth:24, replyQuickDepth:10, continuationDepth:26, maxShortlist:10, maxDeepReplies:8, treeMaxPly:160, treeNodeCap:50000, frontierWidth:4 }
 };
 
 function getBrilliantModeConfig(mode){
@@ -2384,7 +2384,7 @@ async function getBestLineMove(node, config, cancelToken, existingEval){
   const cacheKey = `${node?.fen}|${node?.turn}|${config.key}`;
   const cached = BRILLIANT_TT.bestLine.get(cacheKey);
   if(cached && cached.depth >= config.scanDepth){
-    return { ...cached.result };
+    return cached.result.map(item => ({ ...item }));
   }
 
   const evalPayload = existingEval || await analyzeFenPromise(
@@ -2394,23 +2394,63 @@ async function getBestLineMove(node, config, cancelToken, existingEval){
     { parallel:true, channel:'mainline' }
   );
   assertBrilliantScanActive(cancelToken);
+  const legalMoves = (() => {
+    const game = cloneGameFromFen(node.fen);
+    return game ? (game.moves({ verbose:true }) || []) : [];
+  })();
+  if(!legalMoves.length) return [];
+
   const bestUci = Array.isArray(evalPayload?.pv) && evalPayload.pv.length ? String(evalPayload.pv[0]) : '';
-  if(!bestUci) return null;
+  const frontierScores = await runLimited(legalMoves, BRILLIANT_PARALLEL_TASKS, async move => {
+    assertBrilliantScanActive(cancelToken);
+    const nextGame = cloneGameFromFen(node.fen);
+    if(!nextGame) return null;
+    const res = nextGame.move(moveSpecFromVerbose(move));
+    if(!res) return null;
+    const uci = uciFromMoveResult(res);
+    if(bestUci && uci === bestUci){
+      return {
+        uci,
+        san: res.san,
+        fen: nextGame.fen(),
+        turn: nextGame.turn(),
+        board: boardFromChessJs(nextGame),
+        score: 1000000
+      };
+    }
+    const payload = await analyzeFenPromise(
+      nextGame.fen(),
+      nextGame.turn(),
+      Math.max(8, config.replyQuickDepth),
+      { parallel:true }
+    );
+    assertBrilliantScanActive(cancelToken);
+    const score = scoreForMover(payloadToCp(payload), node.turn);
+    if(score == null) return null;
+    return {
+      uci,
+      san: res.san,
+      fen: nextGame.fen(),
+      turn: nextGame.turn(),
+      board: boardFromChessJs(nextGame),
+      score
+    };
+  });
 
-  const game = cloneGameFromFen(node.fen);
-  if(!game) return null;
-  const res = applyUciMove(game, bestUci);
-  if(!res) return null;
+  const result = frontierScores
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.san.localeCompare(b.san))
+    .slice(0, Math.max(1, config.frontierWidth || 1))
+    .map(item => ({
+      uci: item.uci,
+      san: item.san,
+      fen: item.fen,
+      turn: item.turn,
+      board: item.board
+    }));
 
-  const result = {
-    uci: bestUci,
-    san: res.san,
-    fen: game.fen(),
-    turn: game.turn(),
-    board: boardFromChessJs(game)
-  };
   BRILLIANT_TT.bestLine.set(cacheKey, { depth: config.scanDepth, result });
-  return { ...result };
+  return result.map(item => ({ ...item }));
 }
 
 async function runLimited(items, limit, workerFn){
@@ -2800,8 +2840,9 @@ async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', on
     }
 
     if(ply < config.treeMaxPly && exploredNodes < config.treeNodeCap){
-      const bestChild = await getBestLineMove(node, config, cancelToken, nodeEval);
-      if(bestChild){
+      const frontier = await getBestLineMove(node, config, cancelToken, nodeEval);
+      for(const bestChild of frontier){
+        if(exploredNodes >= config.treeNodeCap) break;
         const childFindings = await visit({
           fen: bestChild.fen,
           turn: bestChild.turn,
