@@ -2086,6 +2086,7 @@ const BRILLIANT_STABILITY_CP = 45;
 const BRILLIANT_REPLY_DROP_CP = 60;
 const BRILLIANT_ALREADY_WINNING_CP = 350;
 const BRILLIANT_NOT_BAD_AFTER_CP = -40;
+const BRILLIANT_OPPONENT_GAIN_CP = 5;
 const BRILLIANT_SURFACE_DROP_CP = 20;
 const BRILLIANT_RECOVERY_CP = 28;
 const BRILLIANT_MIN_SAC_VALUE = 1;
@@ -2466,6 +2467,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     const deepScore = scoreForMover(payloadToCp(deepEval), mover);
     if(deepScore == null) return null;
     if(rootScore != null && deepScore < rootScore - BRILLIANT_NEAR_BEST_CP) return null;
+    if(rootScore != null && deepScore < rootScore - BRILLIANT_OPPONENT_GAIN_CP) return null;
     const lookedWorseAtFirst = (
       (rootScore != null && shallowScore <= rootScore - BRILLIANT_SURFACE_DROP_CP) ||
       (deepScore - shallowScore) >= BRILLIANT_RECOVERY_CP
@@ -2604,9 +2606,13 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     const replyHolds = worstReplyScore >= candidate.deepScore - BRILLIANT_REPLY_DROP_CP;
     const notBadAfterMove = worstReplyScore >= BRILLIANT_NOT_BAD_AFTER_CP;
     const stillNearBestAfterDefense = rootScore == null ? true : worstReplyScore >= rootScore - BRILLIANT_NEAR_BEST_CP;
+    const doesNotImproveOpponent = rootScore == null ? true : (
+      candidate.deepScore >= rootScore - BRILLIANT_OPPONENT_GAIN_CP &&
+      worstReplyScore >= rootScore - BRILLIANT_OPPONENT_GAIN_CP
+    );
     const sacrificeCanBeAccepted = foundAcceptance;
 
-    if(notAlreadyWinning && stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && sacrificeCanBeAccepted){
+    if(notAlreadyWinning && stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && doesNotImproveOpponent && sacrificeCanBeAccepted){
       const found = {
         path: (start.path || []).slice(),
         pathPly: frontierIndex,
