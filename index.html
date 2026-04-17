@@ -2042,9 +2042,16 @@ function uciFromMoveResult(res){
   return res.from + res.to + (res.promotion || '');
 }
 
+function turnFromFen(fen){
+  const parts = String(fen || '').trim().split(/\s+/);
+  const turn = parts[1];
+  return turn === 'w' || turn === 'b' ? turn : null;
+}
+
 function analyzeFenPromise(fen, turn, depth = 18, options = {}){
   return new Promise(resolve => {
     let settled = false;
+    const normalizedTurn = turnFromFen(fen) || turn || 'w';
     const finish = payload => {
       if(settled) return;
       settled = true;
@@ -2054,7 +2061,7 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
     const timer = setTimeout(() => finish(null), Math.max(9000, targetDepth * 650));
     try {
       if(options?.parallel){
-        requestParallelEval(fen, turn, targetDepth, !!options?.forceFresh).then(payload => {
+        requestParallelEval(fen, normalizedTurn, targetDepth, !!options?.forceFresh).then(payload => {
           clearTimeout(timer);
           finish(payload);
         }).catch(() => {
@@ -2065,7 +2072,7 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
       }
       requestEval(
         fen,
-        turn,
+        normalizedTurn,
         payload => {
           clearTimeout(timer);
           finish(payload);
@@ -4314,7 +4321,7 @@ function requestParallelEval(fen, turn, depth, forceFresh=false){
     const job = {
       id: ++EVAL_POOL.latestJob,
       fen,
-      turn,
+      turn: turnFromFen(fen) || turn || 'w',
       depth: Math.max(8, Number(depth) || 18),
       forceFresh,
       resolve
@@ -4581,6 +4588,7 @@ function requestEval(fen, turn, onEval, onStatus, depth=18, options={}){
   const targetDepth = Math.max(8, Number(cfg.depth) || 18);
   const forceFresh = !!cfg.forceFresh;
   const thinkMs = Math.max(400, Number(cfg.thinkMs) || ENGINE_SEARCH_MS);
+  const normalizedTurn = turnFromFen(fen) || turn || 'w';
 
   if(!forceFresh && ENGINE.cache.has(fen)){
     onEval(cloneEvalPayload(ENGINE.cache.get(fen)));
@@ -4591,7 +4599,7 @@ function requestEval(fen, turn, onEval, onStatus, depth=18, options={}){
   initEngine();
 
   ENGINE.queue = ENGINE.queue.filter(job => !(job.kind === 'eval' && job.fen === fen));
-  const job = { id: ++ENGINE.latestJob, kind:'eval', fen, turn, onEval, onStatus, depth: targetDepth, thinkMs, forceFresh };
+  const job = { id: ++ENGINE.latestJob, kind:'eval', fen, turn: normalizedTurn, onEval, onStatus, depth: targetDepth, thinkMs, forceFresh };
   ENGINE.queue.push(job);
 
   if(!ENGINE.uciOk || !ENGINE.ready){
