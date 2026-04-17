@@ -2082,6 +2082,7 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
 }
 
 const BRILLIANT_NEAR_BEST_CP = 30;
+const BRILLIANT_BEST_MOVE_CP = 3;
 const BRILLIANT_STABILITY_CP = 45;
 const BRILLIANT_REPLY_DROP_CP = 60;
 const BRILLIANT_ALREADY_WINNING_CP = 350;
@@ -2466,7 +2467,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     const deepEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), config.confirmDepth, { forceFresh:true, parallel:true });
     const deepScore = scoreForMover(payloadToCp(deepEval), mover);
     if(deepScore == null) return null;
-    if(rootScore != null && deepScore < rootScore - BRILLIANT_NEAR_BEST_CP) return null;
+    if(rootScore != null && deepScore < rootScore - BRILLIANT_BEST_MOVE_CP) return null;
     if(rootScore != null && deepScore < rootScore - BRILLIANT_OPPONENT_GAIN_CP) return null;
     const lookedWorseAtFirst = (
       (rootScore != null && shallowScore <= rootScore - BRILLIANT_SURFACE_DROP_CP) ||
@@ -2494,7 +2495,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
   if(!Number.isFinite(bestScore)) return [];
 
   const shortlist = candidates
-    .filter(candidate => bestScore - candidate.deepScore <= BRILLIANT_NEAR_BEST_CP)
+    .filter(candidate => bestScore - candidate.deepScore <= BRILLIANT_BEST_MOVE_CP)
     .sort((a, b) => (b.sacValue - a.sacValue) || (b.deepScore - a.deepScore) || a.san.localeCompare(b.san))
     .slice(0, config.maxShortlist);
 
@@ -2602,6 +2603,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     }
 
     const notAlreadyWinning = rootScore == null ? true : rootScore < BRILLIANT_ALREADY_WINNING_CP;
+    const isBestMove = bestScore - candidate.deepScore <= BRILLIANT_BEST_MOVE_CP;
     const stableEnough = candidate.stability == null || candidate.stability <= BRILLIANT_STABILITY_CP;
     const replyHolds = worstReplyScore >= candidate.deepScore - BRILLIANT_REPLY_DROP_CP;
     const notBadAfterMove = worstReplyScore >= BRILLIANT_NOT_BAD_AFTER_CP;
@@ -2612,7 +2614,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     );
     const sacrificeCanBeAccepted = foundAcceptance;
 
-    if(notAlreadyWinning && stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && doesNotImproveOpponent && sacrificeCanBeAccepted){
+    if(isBestMove && notAlreadyWinning && stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && doesNotImproveOpponent && sacrificeCanBeAccepted){
       const found = {
         path: (start.path || []).slice(),
         pathPly: frontierIndex,
