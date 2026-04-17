@@ -2053,6 +2053,16 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
     const targetDepth = Math.max(8, Number(depth) || 18);
     const timer = setTimeout(() => finish(null), Math.max(9000, targetDepth * 650));
     try {
+      if(options?.parallel){
+        requestParallelEval(fen, turn, targetDepth, !!options?.forceFresh).then(payload => {
+          clearTimeout(timer);
+          finish(payload);
+        }).catch(() => {
+          clearTimeout(timer);
+          finish(null);
+        });
+        return;
+      }
       requestEval(
         fen,
         turn,
@@ -2087,6 +2097,7 @@ const BRILLIANT_MAX_SHORTLIST = 6;
 const BRILLIANT_MAX_DEEP_REPLIES = 4;
 const BRILLIANT_TREE_MAX_PLY = 80;
 const BRILLIANT_TREE_NODE_CAP = 12000;
+const BRILLIANT_PARALLEL_TASKS = Math.max(2, Math.min(4, Number((typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 4) || 4) - 1));
 
 function scoreForMover(cp, mover){
   if(cp == null) return null;
@@ -2244,7 +2255,7 @@ async function analyzeReplyContinuation(replyState, mover, replyEval){
     continuation.fen(),
     continuation.turn(),
     BRILLIANT_CONTINUATION_DEPTH,
-    { forceFresh:true }
+    { forceFresh:true, parallel:true }
   );
   const continuationScore = scoreForMover(payloadToCp(continuationEval), mover);
   if(continuationScore == null) return null;
@@ -2254,6 +2265,24 @@ async function analyzeReplyContinuation(replyState, mover, replyEval){
     san: continuationRes.san,
     pvSan: pvToSan(continuation.fen(), continuationEval?.pv || [], 8)
   };
+}
+
+async function runLimited(items, limit, workerFn){
+  const results = new Array(items.length);
+  let index = 0;
+  const workerCount = Math.max(1, Math.min(limit || 1, items.length || 0));
+  if(!workerCount) return results;
+
+  async function runOne(){
+    while(true){
+      const current = index++;
+      if(current >= items.length) break;
+      results[current] = await workerFn(items[current], current);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => runOne()));
+  return results;
 }
 
 function positionHasSacrificeCandidate(node){
@@ -2281,11 +2310,8 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
   const legalMoves = rootGame.moves({ verbose:true }) || [];
   if(!legalMoves.length) return [];
 
-  const candidates = [];
   const bestScore = rootScore == null ? -Infinity : rootScore;
-
-  for(let i = 0; i < legalMoves.length; i++){
-    const move = legalMoves[i];
+  const candidateResults = await runLimited(legalMoves, BRILLIANT_PARALLEL_TASKS, async (move, i) => {
     if(typeof onProgress === 'function') onProgress({
       stage:'moves',
       frontierIndex,
@@ -2302,20 +2328,20 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
 
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
     const sac = classifySacrificeCandidate(start.board, res, mover, postMoveReplies);
-    if(!sac.isMeaningfulSacrifice) continue;
-    if(sac.capturedWasHanging) continue;
+    if(!sac.isMeaningfulSacrifice) return null;
+    if(sac.capturedWasHanging) return null;
 
-    const shallowEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), BRILLIANT_SCAN_DEPTH);
+    const shallowEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), BRILLIANT_SCAN_DEPTH, { parallel:true });
     const shallowScore = scoreForMover(payloadToCp(shallowEval), mover);
-    if(shallowScore == null) continue;
-    if(rootScore != null && shallowScore < rootScore - (BRILLIANT_NEAR_BEST_CP * 2)) continue;
+    if(shallowScore == null) return null;
+    if(rootScore != null && shallowScore < rootScore - (BRILLIANT_NEAR_BEST_CP * 2)) return null;
 
-    const deepEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), BRILLIANT_CONFIRM_DEPTH, { forceFresh:true });
+    const deepEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), BRILLIANT_CONFIRM_DEPTH, { forceFresh:true, parallel:true });
     const deepScore = scoreForMover(payloadToCp(deepEval), mover);
-    if(deepScore == null) continue;
-    if(rootScore != null && deepScore < rootScore - BRILLIANT_NEAR_BEST_CP) continue;
+    if(deepScore == null) return null;
+    if(rootScore != null && deepScore < rootScore - BRILLIANT_NEAR_BEST_CP) return null;
 
-    candidates.push({
+    return {
       san: res.san,
       uci: uciFromMoveResult(res),
       sacValue: sac.sacValue,
@@ -2326,8 +2352,10 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       afterFen: nextGame.fen(),
       to: res.to,
       reason: res.captured ? `Apparent ${sac.reason.toLowerCase()}` : sac.reason
-    });
-  }
+    };
+  });
+
+  const candidates = candidateResults.filter(Boolean);
 
   if(!Number.isFinite(bestScore)) return [];
 
@@ -2336,12 +2364,9 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     .sort((a, b) => (b.sacValue - a.sacValue) || (b.deepScore - a.deepScore) || a.san.localeCompare(b.san))
     .slice(0, BRILLIANT_MAX_SHORTLIST);
 
-  const findings = [];
-
-  for(let i = 0; i < shortlist.length; i++){
-    const candidate = shortlist[i];
+  const findingResults = await runLimited(shortlist, BRILLIANT_PARALLEL_TASKS, async (candidate, i) => {
     const replyGame = cloneGameFromFen(candidate.afterFen);
-    if(!replyGame) continue;
+    if(!replyGame) return null;
     const replies = (replyGame.moves({ verbose:true }) || []).slice().sort((a, b) => {
       return Number(replyAcceptsSacrifice(b, candidate)) - Number(replyAcceptsSacrifice(a, candidate));
     });
@@ -2352,8 +2377,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     let foundAcceptance = false;
     const replySnapshots = [];
 
-    for(let j = 0; j < replies.length; j++){
-      const reply = replies[j];
+    const snapshotResults = await runLimited(replies, BRILLIANT_PARALLEL_TASKS, async (reply, j) => {
       if(typeof onProgress === 'function') onProgress({
         stage:'replies',
         frontierIndex,
@@ -2367,26 +2391,30 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       });
 
       const replyState = cloneGameFromFen(candidate.afterFen);
-      if(!replyState) continue;
+      if(!replyState) return null;
       const replyRes = replyState.move(moveSpecFromVerbose(reply));
-      if(!replyRes) continue;
+      if(!replyRes) return null;
       const acceptance = replyAcceptsSacrifice(reply, candidate);
-      if(acceptance) foundAcceptance = true;
 
-      const quickEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), BRILLIANT_REPLY_QUICK_DEPTH);
+      const quickEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), BRILLIANT_REPLY_QUICK_DEPTH, { parallel:true });
       const quickScore = scoreForMover(payloadToCp(quickEval), mover);
-      if(quickScore == null) continue;
+      if(quickScore == null) return null;
 
-      replySnapshots.push({
+      return {
         acceptance,
         san: replyRes.san,
         fen: replyState.fen(),
         turn: replyState.turn(),
         quickScore
-      });
-      if(quickScore < worstReplyScore){
-        worstReplyScore = quickScore;
-        worstReplySan = replyRes.san;
+      };
+    });
+
+    for(const snapshot of snapshotResults.filter(Boolean)){
+      replySnapshots.push(snapshot);
+      if(snapshot.acceptance) foundAcceptance = true;
+      if(snapshot.quickScore < worstReplyScore){
+        worstReplyScore = snapshot.quickScore;
+        worstReplySan = snapshot.san;
         worstContinuationSan = '';
       }
     }
@@ -2399,10 +2427,10 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       })
       .slice(0, BRILLIANT_MAX_DEEP_REPLIES);
 
-    for(const snapshot of deepReplyPool){
-      const replyEval = await analyzeFenPromise(snapshot.fen, snapshot.turn, BRILLIANT_REPLY_DEPTH, { forceFresh:true });
+    const deepResults = await runLimited(deepReplyPool, BRILLIANT_PARALLEL_TASKS, async snapshot => {
+      const replyEval = await analyzeFenPromise(snapshot.fen, snapshot.turn, BRILLIANT_REPLY_DEPTH, { forceFresh:true, parallel:true });
       const replyScore = scoreForMover(payloadToCp(replyEval), mover);
-      if(replyScore == null) continue;
+      if(replyScore == null) return null;
 
       let resolvedScore = replyScore;
       let continuationSan = '';
@@ -2415,10 +2443,14 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
         }
       }
 
-      if(resolvedScore < worstReplyScore){
-        worstReplyScore = resolvedScore;
-        worstReplySan = snapshot.san;
-        worstContinuationSan = continuationSan;
+      return { resolvedScore, san: snapshot.san, continuationSan };
+    });
+
+    for(const result of deepResults.filter(Boolean)){
+      if(result.resolvedScore < worstReplyScore){
+        worstReplyScore = result.resolvedScore;
+        worstReplySan = result.san;
+        worstContinuationSan = result.continuationSan;
       }
     }
 
@@ -2430,7 +2462,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     const sacrificeCanBeAccepted = foundAcceptance;
 
     if(notAlreadyWinning && stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && sacrificeCanBeAccepted){
-      findings.push({
+      return {
         path: (start.path || []).slice(),
         pathPly: frontierIndex,
         san: candidate.san,
@@ -2445,11 +2477,12 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
         stability: candidate.stability,
         pvSan: candidate.pvSan,
         reason: candidate.reason
-      });
+      };
     }
-  }
+    return null;
+  });
 
-  return findings;
+  return findingResults.filter(Boolean);
 }
 
 async function findBrilliantMovesFromPosition(moves, onProgress){
@@ -2485,7 +2518,7 @@ async function findBrilliantMovesFromPosition(moves, onProgress){
     if(!legalMoves.length) return;
 
     if(positionHasSacrificeCandidate(node)){
-      const rootEval = await analyzeFenPromise(node.fen, node.turn, BRILLIANT_CONFIRM_DEPTH, { forceFresh:true });
+      const rootEval = await analyzeFenPromise(node.fen, node.turn, BRILLIANT_CONFIRM_DEPTH, { forceFresh:true, parallel:true });
       if(rootEval){
         const localFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply);
         findings.push(...localFindings);
@@ -3757,10 +3790,27 @@ const ENGINE = {
   cache: new Map(),
   lastFen: '',
 };
+const PARALLEL_EVAL_POOL_SIZE = Math.max(2, Math.min(4, Number((typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 4) || 4) - 1));
+const EVAL_POOL = {
+  workers: [],
+  queue: [],
+  latestJob: 0,
+  started: false,
+};
 
 const ENGINE_SEARCH_MS = 2800;
 const ENGINE_HARD_TIMEOUT_MS = 4200;
 const ENGINE_PV_CACHE_PLY = 16;
+
+function createStockfishWorker(url){
+  const workerCode = `self.importScripts(${JSON.stringify(url)});`;
+  const blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
+  try {
+    return new Worker(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
 
 function resetEngineState(){
   ENGINE.ready = false;
@@ -3778,6 +3828,21 @@ function terminateEngineWorker(){
   ENGINE.worker = null;
 }
 
+function terminateEvalPool(){
+  for(const entry of EVAL_POOL.workers){
+    if(entry?.timer){
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    if(entry?.worker){
+      try { entry.worker.terminate(); } catch(_) {}
+    }
+  }
+  EVAL_POOL.workers = [];
+  EVAL_POOL.queue = [];
+  EVAL_POOL.started = false;
+}
+
 function bootEngine(url, mode){
   terminateEngineWorker();
   resetEngineState();
@@ -3788,12 +3853,8 @@ function bootEngine(url, mode){
 
   // Use importScripts blob trick — works on file://, GitHub Pages, and all static hosts
   // A tiny inline worker fetches and runs the engine script via importScripts
-  const workerCode = `self.importScripts(${JSON.stringify(url)});`;
-  let blobUrl;
   try {
-    blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
-    ENGINE.worker = new Worker(blobUrl);
-    URL.revokeObjectURL(blobUrl);
+    ENGINE.worker = createStockfishWorker(url);
   } catch(err) {
     if(mode !== 'asm'){
       bootEngine(STOCKFISH_ASM_URL, 'asm');
@@ -3834,6 +3895,165 @@ function initEngine(){
   if(ENGINE.started) return;
   ENGINE.started = true;
   bootEngine(STOCKFISH_WASM_URL, 'wasm');
+}
+
+function handleEvalPoolMsg(entry, line){
+  if(!line) return;
+
+  if(line === 'uciok'){
+    entry.uciOk = true;
+    if(entry.worker){
+      entry.worker.postMessage('setoption name UCI_AnalyseMode value true');
+      entry.worker.postMessage('setoption name Skill Level value 20');
+      entry.worker.postMessage('setoption name MultiPV value 1');
+      entry.worker.postMessage('isready');
+    }
+    return;
+  }
+
+  if(line === 'readyok'){
+    entry.ready = true;
+    flushEvalPoolQueue();
+    return;
+  }
+
+  const job = entry.currentJob;
+  if(!job) return;
+
+  if(line.startsWith('bestmove')){
+    if(entry.timer){
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    job.resolve(cloneEvalPayload(job.lastPayload));
+    entry.currentJob = null;
+    flushEvalPoolQueue();
+    return;
+  }
+
+  if(line.startsWith('info ') && line.includes(' score ')){
+    let payload = null;
+    const mate = line.match(/score mate (-?\d+)/);
+    if(mate){
+      const raw = parseInt(mate[1], 10);
+      const signed = job.turn === 'b' ? -raw : raw;
+      payload = { type:'mate', value:signed };
+    } else {
+      const cp = line.match(/score cp (-?\d+)/);
+      if(cp){
+        const raw = parseInt(cp[1], 10) / 100;
+        const signed = job.turn === 'b' ? -raw : raw;
+        payload = { type:'cp', value:signed };
+      }
+    }
+
+    if(payload){
+      const pvMatch = line.match(/\spv\s+(.+)$/);
+      job.bestPv = pvMatch ? pvMatch[1].trim().split(/\s+/).filter(Boolean) : (job.bestPv || []);
+      payload.pv = job.bestPv.slice();
+      job.lastPayload = cloneEvalPayload(payload);
+      ENGINE.cache.set(job.fen, cloneEvalPayload(payload));
+      cachePrincipalVariation(job, payload, job.bestPv);
+    }
+  }
+}
+
+function spawnEvalPoolWorker(url, mode){
+  const entry = {
+    worker: null,
+    ready: false,
+    uciOk: false,
+    currentJob: null,
+    timer: null,
+    mode
+  };
+
+  try {
+    entry.worker = createStockfishWorker(url);
+  } catch(_) {
+    if(mode !== 'asm') return spawnEvalPoolWorker(STOCKFISH_ASM_URL, 'asm');
+    return null;
+  }
+
+  entry.worker.onmessage = e => handleEvalPoolMsg(entry, typeof e.data === 'string' ? e.data : '');
+  entry.worker.onerror = () => {
+    const job = entry.currentJob;
+    if(entry.timer){
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    if(job){
+      job.resolve(cloneEvalPayload(job.lastPayload));
+      entry.currentJob = null;
+    }
+    if(mode !== 'asm'){
+      try { entry.worker.terminate(); } catch(_) {}
+      const fallback = spawnEvalPoolWorker(STOCKFISH_ASM_URL, 'asm');
+      if(fallback){
+        const idx = EVAL_POOL.workers.indexOf(entry);
+        if(idx >= 0) EVAL_POOL.workers[idx] = fallback;
+      }
+    }
+    flushEvalPoolQueue();
+  };
+
+  entry.worker.postMessage('uci');
+  return entry;
+}
+
+function initEvalPool(){
+  if(EVAL_POOL.started) return;
+  EVAL_POOL.started = true;
+  for(let i = 0; i < PARALLEL_EVAL_POOL_SIZE; i++){
+    const entry = spawnEvalPoolWorker(STOCKFISH_WASM_URL, 'wasm');
+    if(entry) EVAL_POOL.workers.push(entry);
+  }
+}
+
+function flushEvalPoolQueue(){
+  for(const entry of EVAL_POOL.workers){
+    if(!entry?.worker || !entry.ready || entry.currentJob || !EVAL_POOL.queue.length) continue;
+    const job = EVAL_POOL.queue.shift();
+    if(!job) continue;
+    entry.currentJob = job;
+    job.bestPv = [];
+    job.lastPayload = null;
+    entry.worker.postMessage('stop');
+    entry.worker.postMessage('setoption name UCI_AnalyseMode value true');
+    entry.worker.postMessage('setoption name Skill Level value 20');
+    entry.worker.postMessage('setoption name MultiPV value 1');
+    entry.worker.postMessage('position fen ' + job.fen);
+    entry.worker.postMessage('go depth ' + Math.max(1, Math.min(40, Math.round(job.depth))));
+    entry.timer = setTimeout(() => {
+      if(entry.currentJob === job){
+        try { entry.worker.postMessage('stop'); } catch(_) {}
+        job.resolve(cloneEvalPayload(job.lastPayload));
+        entry.currentJob = null;
+        entry.timer = null;
+        flushEvalPoolQueue();
+      }
+    }, Math.max(ENGINE_HARD_TIMEOUT_MS, 1200 + (Math.max(1, Number(job.depth) || 1) * 500)));
+  }
+}
+
+function requestParallelEval(fen, turn, depth, forceFresh=false){
+  return new Promise(resolve => {
+    if(!forceFresh && ENGINE.cache.has(fen)){
+      resolve(cloneEvalPayload(ENGINE.cache.get(fen)));
+      return;
+    }
+    initEvalPool();
+    const job = {
+      id: ++EVAL_POOL.latestJob,
+      fen,
+      turn,
+      depth: Math.max(8, Number(depth) || 18),
+      forceFresh,
+      resolve
+    };
+    EVAL_POOL.queue.push(job);
+    flushEvalPoolQueue();
+  });
 }
 
 function finishCurrentSearch(finalStatus){
