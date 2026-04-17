@@ -2081,28 +2081,28 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
   });
 }
 
-const BRILLIANT_SCAN_DEPTH = 10;
-const BRILLIANT_CONFIRM_DEPTH = 16;
-const BRILLIANT_REPLY_DEPTH = 16;
-const BRILLIANT_REPLY_QUICK_DEPTH = 8;
 const BRILLIANT_NEAR_BEST_CP = 30;
 const BRILLIANT_STABILITY_CP = 45;
 const BRILLIANT_REPLY_DROP_CP = 60;
 const BRILLIANT_ALREADY_WINNING_CP = 350;
 const BRILLIANT_NOT_BAD_AFTER_CP = -40;
-const BRILLIANT_CONTINUATION_DEPTH = 18;
 const BRILLIANT_MIN_SAC_VALUE = 1;
 const BRILLIANT_MAX_RESULTS = 8;
-const BRILLIANT_MAX_SHORTLIST = 6;
-const BRILLIANT_MAX_DEEP_REPLIES = 4;
-const BRILLIANT_TREE_MAX_PLY = 80;
-const BRILLIANT_TREE_NODE_CAP = 12000;
 const BRILLIANT_PARALLEL_TASKS = Math.max(2, Math.min(4, Number((typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 4) || 4) - 1));
-const BRILLIANT_CACHE = {
+const BRILLIANT_TT = {
   sacNodes: new Map(),
   continuations: new Map(),
   findings: new Map(),
 };
+const BRILLIANT_MODE_CONFIGS = {
+  quick: { key:'quick', label:'Quick', scanDepth:10, confirmDepth:16, replyDepth:16, replyQuickDepth:8, continuationDepth:18, maxShortlist:6, maxDeepReplies:4, treeMaxPly:24, treeNodeCap:2500 },
+  deep: { key:'deep', label:'Deep', scanDepth:12, confirmDepth:20, replyDepth:20, replyQuickDepth:8, continuationDepth:22, maxShortlist:8, maxDeepReplies:6, treeMaxPly:80, treeNodeCap:12000 },
+  unlimited: { key:'unlimited', label:'Unlimited', scanDepth:14, confirmDepth:24, replyDepth:24, replyQuickDepth:10, continuationDepth:26, maxShortlist:10, maxDeepReplies:8, treeMaxPly:160, treeNodeCap:50000 }
+};
+
+function getBrilliantModeConfig(mode){
+  return BRILLIANT_MODE_CONFIGS[mode] || BRILLIANT_MODE_CONFIGS.deep;
+}
 
 function scoreForMover(cp, mover){
   if(cp == null) return null;
@@ -2247,11 +2247,11 @@ function replyAcceptsSacrifice(reply, candidate){
   return !!reply?.captured && reply.to === candidate.to;
 }
 
-async function analyzeReplyContinuation(replyState, mover, replyEval){
-  const continuationKey = `${replyState.fen()}|${mover}`;
-  if(BRILLIANT_CACHE.continuations.has(continuationKey)){
-    const cached = BRILLIANT_CACHE.continuations.get(continuationKey);
-    return cached ? { ...cached } : null;
+async function analyzeReplyContinuation(replyState, mover, replyEval, config){
+  const continuationKey = `${replyState.fen()}|${mover}|${config.key}`;
+  const cached = BRILLIANT_TT.continuations.get(continuationKey);
+  if(cached && cached.depth >= config.continuationDepth){
+    return cached.result ? { ...cached.result } : null;
   }
 
   const firstPvMove = Array.isArray(replyEval?.pv) ? replyEval.pv[0] : '';
@@ -2265,7 +2265,7 @@ async function analyzeReplyContinuation(replyState, mover, replyEval){
   const continuationEval = await analyzeFenPromise(
     continuation.fen(),
     continuation.turn(),
-    BRILLIANT_CONTINUATION_DEPTH,
+    config.continuationDepth,
     { forceFresh:true, parallel:true }
   );
   const continuationScore = scoreForMover(payloadToCp(continuationEval), mover);
@@ -2276,7 +2276,7 @@ async function analyzeReplyContinuation(replyState, mover, replyEval){
     san: continuationRes.san,
     pvSan: pvToSan(continuation.fen(), continuationEval?.pv || [], 8)
   };
-  BRILLIANT_CACHE.continuations.set(continuationKey, result);
+  BRILLIANT_TT.continuations.set(continuationKey, { depth: config.continuationDepth, result });
   return { ...result };
 }
 
@@ -2300,10 +2300,10 @@ async function runLimited(items, limit, workerFn){
 
 function positionHasSacrificeCandidate(node){
   const cacheKey = `${node?.fen}|${node?.turn}`;
-  if(BRILLIANT_CACHE.sacNodes.has(cacheKey)) return BRILLIANT_CACHE.sacNodes.get(cacheKey);
+  if(BRILLIANT_TT.sacNodes.has(cacheKey)) return BRILLIANT_TT.sacNodes.get(cacheKey);
   const game = cloneGameFromFen(node?.fen);
   if(!game){
-    BRILLIANT_CACHE.sacNodes.set(cacheKey, false);
+    BRILLIANT_TT.sacNodes.set(cacheKey, false);
     return false;
   }
   const legalMoves = game.moves({ verbose:true }) || [];
@@ -2315,18 +2315,19 @@ function positionHasSacrificeCandidate(node){
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
     const sac = classifySacrificeCandidate(node.board, res, node.turn, postMoveReplies);
     if(sac.isMeaningfulSacrifice && !sac.capturedWasHanging){
-      BRILLIANT_CACHE.sacNodes.set(cacheKey, true);
+      BRILLIANT_TT.sacNodes.set(cacheKey, true);
       return true;
     }
   }
-  BRILLIANT_CACHE.sacNodes.set(cacheKey, false);
+  BRILLIANT_TT.sacNodes.set(cacheKey, false);
   return false;
 }
 
-async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, frontierIndex){
-  const findingsKey = `${start.fen}|${start.turn}`;
-  if(BRILLIANT_CACHE.findings.has(findingsKey)){
-    return BRILLIANT_CACHE.findings.get(findingsKey).map(item => ({
+async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, frontierIndex, config){
+  const findingsKey = `${start.fen}|${start.turn}|${config.key}`;
+  const cached = BRILLIANT_TT.findings.get(findingsKey);
+  if(cached && cached.depth >= config.confirmDepth){
+    return cached.result.map(item => ({
       ...item,
       path: Array.isArray(item.path) ? item.path.slice() : []
     }));
@@ -2361,12 +2362,12 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     if(!sac.isMeaningfulSacrifice) return null;
     if(sac.capturedWasHanging) return null;
 
-    const shallowEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), BRILLIANT_SCAN_DEPTH, { parallel:true });
+    const shallowEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), config.scanDepth, { parallel:true });
     const shallowScore = scoreForMover(payloadToCp(shallowEval), mover);
     if(shallowScore == null) return null;
     if(rootScore != null && shallowScore < rootScore - (BRILLIANT_NEAR_BEST_CP * 2)) return null;
 
-    const deepEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), BRILLIANT_CONFIRM_DEPTH, { forceFresh:true, parallel:true });
+    const deepEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), config.confirmDepth, { forceFresh:true, parallel:true });
     const deepScore = scoreForMover(payloadToCp(deepEval), mover);
     if(deepScore == null) return null;
     if(rootScore != null && deepScore < rootScore - BRILLIANT_NEAR_BEST_CP) return null;
@@ -2392,7 +2393,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
   const shortlist = candidates
     .filter(candidate => bestScore - candidate.deepScore <= BRILLIANT_NEAR_BEST_CP)
     .sort((a, b) => (b.sacValue - a.sacValue) || (b.deepScore - a.deepScore) || a.san.localeCompare(b.san))
-    .slice(0, BRILLIANT_MAX_SHORTLIST);
+    .slice(0, config.maxShortlist);
 
   const findingResults = await runLimited(shortlist, BRILLIANT_PARALLEL_TASKS, async (candidate, i) => {
     const replyGame = cloneGameFromFen(candidate.afterFen);
@@ -2426,7 +2427,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       if(!replyRes) return null;
       const acceptance = replyAcceptsSacrifice(reply, candidate);
 
-      const quickEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), BRILLIANT_REPLY_QUICK_DEPTH, { parallel:true });
+      const quickEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), config.replyQuickDepth, { parallel:true });
       const quickScore = scoreForMover(payloadToCp(quickEval), mover);
       if(quickScore == null) return null;
 
@@ -2455,10 +2456,10 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
         if(Number(b.acceptance) !== Number(a.acceptance)) return Number(b.acceptance) - Number(a.acceptance);
         return a.quickScore - b.quickScore;
       })
-      .slice(0, BRILLIANT_MAX_DEEP_REPLIES);
+      .slice(0, config.maxDeepReplies);
 
     const deepResults = await runLimited(deepReplyPool, BRILLIANT_PARALLEL_TASKS, async snapshot => {
-      const replyEval = await analyzeFenPromise(snapshot.fen, snapshot.turn, BRILLIANT_REPLY_DEPTH, { forceFresh:true, parallel:true });
+      const replyEval = await analyzeFenPromise(snapshot.fen, snapshot.turn, config.replyDepth, { forceFresh:true, parallel:true });
       const replyScore = scoreForMover(payloadToCp(replyEval), mover);
       if(replyScore == null) return null;
 
@@ -2466,17 +2467,30 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       let continuationSan = '';
       const replyState = cloneGameFromFen(snapshot.fen);
       if(replyState){
-        const continuation = await analyzeReplyContinuation(replyState, mover, replyEval);
+        const continuation = await analyzeReplyContinuation(replyState, mover, replyEval, config);
         if(continuation?.score != null){
           resolvedScore = continuation.score;
           continuationSan = continuation.san || '';
         }
       }
 
-      return { resolvedScore, san: snapshot.san, continuationSan };
+      return { resolvedScore, san: snapshot.san, continuationSan, acceptance: snapshot.acceptance };
     });
 
+    let bestAcceptance = null;
+    let bestDecline = null;
+    let bestDefense = null;
+
     for(const result of deepResults.filter(Boolean)){
+      if(result.acceptance && (!bestAcceptance || result.resolvedScore < bestAcceptance.score)){
+        bestAcceptance = { san: result.san, score: result.resolvedScore, continuationSan: result.continuationSan };
+      }
+      if(!result.acceptance && (!bestDecline || result.resolvedScore < bestDecline.score)){
+        bestDecline = { san: result.san, score: result.resolvedScore, continuationSan: result.continuationSan };
+      }
+      if(!bestDefense || result.resolvedScore < bestDefense.score){
+        bestDefense = { san: result.san, score: result.resolvedScore, continuationSan: result.continuationSan };
+      }
       if(result.resolvedScore < worstReplyScore){
         worstReplyScore = result.resolvedScore;
         worstReplySan = result.san;
@@ -2504,6 +2518,12 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
         worstReplySan,
         worstReplyScore,
         worstContinuationSan,
+        bestAcceptanceSan: bestAcceptance?.san || '',
+        bestAcceptanceScore: bestAcceptance?.score ?? null,
+        bestDeclineSan: bestDecline?.san || '',
+        bestDeclineScore: bestDecline?.score ?? null,
+        bestDefenseSan: bestDefense?.san || worstReplySan,
+        bestDefenseScore: bestDefense?.score ?? worstReplyScore,
         stability: candidate.stability,
         pvSan: candidate.pvSan,
         reason: candidate.reason
@@ -2513,14 +2533,18 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
   });
 
   const finalFindings = findingResults.filter(Boolean);
-  BRILLIANT_CACHE.findings.set(findingsKey, finalFindings.map(item => ({
-    ...item,
-    path: Array.isArray(item.path) ? item.path.slice() : []
-  })));
+  BRILLIANT_TT.findings.set(findingsKey, {
+    depth: config.confirmDepth,
+    result: finalFindings.map(item => ({
+      ...item,
+      path: Array.isArray(item.path) ? item.path.slice() : []
+    }))
+  });
   return finalFindings;
 }
 
-async function findBrilliantMovesFromPosition(moves, onProgress){
+async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep'){
+  const config = getBrilliantModeConfig(mode);
   const built = buildStatesFromMoves(moves || []);
   const states = built.states || [];
   const start = states[states.length - 1];
@@ -2531,7 +2555,7 @@ async function findBrilliantMovesFromPosition(moves, onProgress){
   let exploredNodes = 0;
 
   async function visit(node, ply){
-    if(!node?.fen || ply > BRILLIANT_TREE_MAX_PLY || exploredNodes >= BRILLIANT_TREE_NODE_CAP) return;
+    if(!node?.fen || ply > config.treeMaxPly || exploredNodes >= config.treeNodeCap) return;
     const nodeKey = `${ply}|${node.fen}`;
     if(seenNodes.has(nodeKey)) return;
     seenNodes.add(nodeKey);
@@ -2542,7 +2566,7 @@ async function findBrilliantMovesFromPosition(moves, onProgress){
         stage:'tree',
         depth: ply,
         explored: exploredNodes,
-        total: BRILLIANT_TREE_NODE_CAP,
+        total: config.treeNodeCap,
         path: node.path || []
       });
     }
@@ -2553,17 +2577,17 @@ async function findBrilliantMovesFromPosition(moves, onProgress){
     if(!legalMoves.length) return;
 
     if(positionHasSacrificeCandidate(node)){
-      const rootEval = await analyzeFenPromise(node.fen, node.turn, BRILLIANT_CONFIRM_DEPTH, { forceFresh:true, parallel:true });
+      const rootEval = await analyzeFenPromise(node.fen, node.turn, config.confirmDepth, { forceFresh:true, parallel:true });
       if(rootEval){
-        const localFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply);
+        const localFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply, config);
         findings.push(...localFindings);
       }
     }
 
-    if(ply >= BRILLIANT_TREE_MAX_PLY || exploredNodes >= BRILLIANT_TREE_NODE_CAP) return;
+    if(ply >= config.treeMaxPly || exploredNodes >= config.treeNodeCap) return;
 
     for(const move of legalMoves){
-      if(exploredNodes >= BRILLIANT_TREE_NODE_CAP) break;
+      if(exploredNodes >= config.treeNodeCap) break;
       const nextGame = cloneGameFromFen(node.fen);
       if(!nextGame) continue;
       const res = nextGame.move(moveSpecFromVerbose(move));
@@ -2693,6 +2717,32 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
   field.appendChild(fieldHint);
   editor.appendChild(field);
 
+  let brilliantMode = 'deep';
+  const modeField = document.createElement('div');
+  modeField.className = 'ed-field';
+  modeField.innerHTML = '<label class="ed-label">Search mode</label>';
+  const modeSelect = document.createElement('select');
+  modeSelect.className = 'ed-select';
+  modeSelect.innerHTML = `
+    <option value="quick">Quick</option>
+    <option value="deep" selected>Deep</option>
+    <option value="unlimited">Unlimited</option>
+  `;
+  const modeHint = document.createElement('div');
+  modeHint.className = 'practice-strength-hint';
+  function updateModeHint(){
+    const cfg = getBrilliantModeConfig(brilliantMode);
+    modeHint.textContent = `${cfg.label} mode: confirm depth ${cfg.confirmDepth}, reply depth ${cfg.replyDepth}, up to ${cfg.treeNodeCap} positions.`;
+  }
+  modeSelect.oninput = e => {
+    brilliantMode = e.target.value || 'deep';
+    updateModeHint();
+  };
+  updateModeHint();
+  modeField.appendChild(modeSelect);
+  modeField.appendChild(modeHint);
+  editor.appendChild(modeField);
+
   const boardHost = document.createElement('div');
   editor.appendChild(boardHost);
 
@@ -2813,7 +2863,7 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
         if(progress.stage === 'replies') {
           status.textContent = `Checking replies for ${progress.san} (${progress.current}/${progress.total})`;
         }
-      });
+      }, brilliantMode);
       if(!findings.length){
         status.textContent = 'No brilliant-move candidates were found in the scanned engine-line positions from this start.';
         status.className = 'practice-status';
@@ -2825,7 +2875,11 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
           const box = document.createElement('div');
           box.className = 'engine-line-box';
           const prefix = item.path && item.path.length ? `After ${item.path.join(' ')} -> ` : '';
-          const replyText = item.worstReplySan ? `${item.worstReplySan} keeps the eval at ${formatBrilliantScore(item.worstReplyScore)}` : 'No legal reply improves the defense';
+          const replyParts = [];
+          if(item.bestAcceptanceSan) replyParts.push(`Best acceptance: ${item.bestAcceptanceSan} (${formatBrilliantScore(item.bestAcceptanceScore)})`);
+          if(item.bestDeclineSan) replyParts.push(`Best decline: ${item.bestDeclineSan} (${formatBrilliantScore(item.bestDeclineScore)})`);
+          if(item.bestDefenseSan) replyParts.push(`Best defense: ${item.bestDefenseSan} (${formatBrilliantScore(item.bestDefenseScore)})`);
+          const replyText = replyParts.length ? replyParts.join(' | ') : (item.worstReplySan ? `${item.worstReplySan} keeps the eval at ${formatBrilliantScore(item.worstReplyScore)}` : 'No legal reply improves the defense');
           const pvText = item.pvSan ? ` PV: ${item.pvSan}` : '';
           const fullLine = [...baseMoves, ...(item.path || []), item.san].filter(Boolean).join(' ');
           box.innerHTML = `<div class="engine-line-label">${esc(prefix + item.san)} | ${esc(item.reason)}</div><div class="engine-line-value">Eval ${formatBrilliantScore(item.score)} | best-gap ${formatBrilliantGap(item.bestGap)} | sacrifice value ${item.sacValue} | ${esc(replyText)}${esc(pvText)}</div>`;
