@@ -2442,6 +2442,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
 
   const mover = start.turn;
   const rootScore = scoreForMover(payloadToCp(rootEval), mover);
+  const rootBestMoveUci = Array.isArray(rootEval?.pv) && rootEval.pv.length ? String(rootEval.pv[0]) : '';
   const legalMoves = rootGame.moves({ verbose:true }) || [];
   if(!legalMoves.length) return [];
 
@@ -2460,6 +2461,8 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     if(!nextGame) return null;
     const res = nextGame.move(moveSpecFromVerbose(move));
     if(!res) return null;
+    const candidateUci = uciFromMoveResult(res);
+    if(rootBestMoveUci && candidateUci !== rootBestMoveUci) return null;
 
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
     const sac = classifySacrificeCandidate(start.board, res, mover, postMoveReplies);
@@ -2484,7 +2487,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
 
     return {
       san: res.san,
-      uci: uciFromMoveResult(res),
+      uci: candidateUci,
       sacValue: sac.sacValue,
       shallowScore,
       deepScore,
@@ -2610,7 +2613,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     }
 
     const notAlreadyWinning = rootScore == null ? true : rootScore < BRILLIANT_ALREADY_WINNING_CP;
-    const isBestMove = bestScore - candidate.deepScore <= BRILLIANT_BEST_MOVE_CP;
+    const isBestMove = (!rootBestMoveUci || candidate.uci === rootBestMoveUci) && bestScore - candidate.deepScore <= BRILLIANT_BEST_MOVE_CP;
     const stableEnough = candidate.stability == null || candidate.stability <= BRILLIANT_STABILITY_CP;
     const replyHolds = worstReplyScore >= candidate.deepScore - BRILLIANT_REPLY_DROP_CP;
     const notBadAfterMove = worstReplyScore >= BRILLIANT_NOT_BAD_AFTER_CP;
