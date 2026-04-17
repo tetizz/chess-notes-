@@ -2074,6 +2074,7 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
 const BRILLIANT_SCAN_DEPTH = 10;
 const BRILLIANT_CONFIRM_DEPTH = 16;
 const BRILLIANT_REPLY_DEPTH = 16;
+const BRILLIANT_REPLY_QUICK_DEPTH = 8;
 const BRILLIANT_NEAR_BEST_CP = 30;
 const BRILLIANT_STABILITY_CP = 45;
 const BRILLIANT_REPLY_DROP_CP = 60;
@@ -2083,6 +2084,7 @@ const BRILLIANT_CONTINUATION_DEPTH = 18;
 const BRILLIANT_MIN_SAC_VALUE = 3;
 const BRILLIANT_MAX_RESULTS = 8;
 const BRILLIANT_MAX_SHORTLIST = 6;
+const BRILLIANT_MAX_DEEP_REPLIES = 4;
 
 function scoreForMover(cp, mover){
   if(cp == null) return null;
@@ -2324,6 +2326,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     let worstReplySan = '';
     let worstContinuationSan = '';
     let foundAcceptance = false;
+    const replySnapshots = [];
 
     for(let j = 0; j < replies.length; j++){
       const reply = replies[j];
@@ -2343,17 +2346,55 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       if(!replyState) continue;
       const replyRes = replyState.move(moveSpecFromVerbose(reply));
       if(!replyRes) continue;
-      if(replyAcceptsSacrifice(reply, candidate)) foundAcceptance = true;
+      const acceptance = replyAcceptsSacrifice(reply, candidate);
+      if(acceptance) foundAcceptance = true;
 
-      const replyEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), BRILLIANT_REPLY_DEPTH, { forceFresh:true });
+      const quickEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), BRILLIANT_REPLY_QUICK_DEPTH);
+      const quickScore = scoreForMover(payloadToCp(quickEval), mover);
+      if(quickScore == null) continue;
+
+      replySnapshots.push({
+        acceptance,
+        san: replyRes.san,
+        fen: replyState.fen(),
+        turn: replyState.turn(),
+        quickScore
+      });
+      if(quickScore < worstReplyScore){
+        worstReplyScore = quickScore;
+        worstReplySan = replyRes.san;
+        worstContinuationSan = '';
+      }
+    }
+
+    const deepReplyPool = replySnapshots
+      .slice()
+      .sort((a, b) => {
+        if(Number(b.acceptance) !== Number(a.acceptance)) return Number(b.acceptance) - Number(a.acceptance);
+        return a.quickScore - b.quickScore;
+      })
+      .slice(0, BRILLIANT_MAX_DEEP_REPLIES);
+
+    for(const snapshot of deepReplyPool){
+      const replyEval = await analyzeFenPromise(snapshot.fen, snapshot.turn, BRILLIANT_REPLY_DEPTH, { forceFresh:true });
       const replyScore = scoreForMover(payloadToCp(replyEval), mover);
       if(replyScore == null) continue;
-      const continuation = await analyzeReplyContinuation(replyState, mover, replyEval);
-      const resolvedScore = continuation?.score ?? replyScore;
+
+      let resolvedScore = replyScore;
+      let continuationSan = '';
+      const replyState = cloneGameFromFen(snapshot.fen);
+      if(replyState){
+        const continuation = await analyzeReplyContinuation(replyState, mover, replyEval);
+        if(continuation?.score != null){
+          resolvedScore = continuation.score;
+          continuationSan = continuation.san || '';
+        }
+      }
+
       if(resolvedScore < worstReplyScore){
         worstReplyScore = resolvedScore;
-        worstReplySan = replyRes.san;
-        worstContinuationSan = continuation?.san || '';
+        worstReplySan = snapshot.san;
+        worstContinuationSan = continuationSan;
       }
     }
 
