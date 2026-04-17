@@ -2529,7 +2529,15 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
   const mover = start.turn;
   const rootScore = scoreForMover(payloadToCp(rootEval), mover);
   const rootBestMoveUci = Array.isArray(rootEval?.pv) && rootEval.pv.length ? String(rootEval.pv[0]) : '';
-  const legalMoves = rootGame.moves({ verbose:true }) || [];
+  const legalMoves = (rootGame.moves({ verbose:true }) || []).slice().sort((a, b) => {
+    const aUci = a?.from && a?.to ? (a.from + a.to + (a.promotion || '')) : '';
+    const bUci = b?.from && b?.to ? (b.from + b.to + (b.promotion || '')) : '';
+    if(rootBestMoveUci){
+      if(aUci === rootBestMoveUci && bUci !== rootBestMoveUci) return -1;
+      if(bUci === rootBestMoveUci && aUci !== rootBestMoveUci) return 1;
+    }
+    return a.san.localeCompare(b.san);
+  });
   if(!legalMoves.length) return [];
 
   const bestScore = rootScore == null ? -Infinity : rootScore;
