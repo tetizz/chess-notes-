@@ -2105,6 +2105,7 @@ const BRILLIANT_TT = {
   continuations: new Map(),
   findings: new Map(),
   subtrees: new Map(),
+  bestLine: new Map(),
 };
 const BRILLIANT_MODE_CONFIGS = {
   quick: { key:'quick', label:'Quick', scanDepth:10, confirmDepth:16, replyDepth:16, replyQuickDepth:8, continuationDepth:18, maxShortlist:6, maxDeepReplies:4, treeMaxPly:24, treeNodeCap:2500 },
@@ -2375,6 +2376,40 @@ async function analyzeReplyContinuation(replyState, mover, replyEval, config, ca
     pvSan: pvToSan(continuation.fen(), continuationEval?.pv || [], 8)
   };
   BRILLIANT_TT.continuations.set(continuationKey, { depth: config.continuationDepth, result });
+  return { ...result };
+}
+
+async function getBestLineMove(node, config, cancelToken, existingEval){
+  assertBrilliantScanActive(cancelToken);
+  const cacheKey = `${node?.fen}|${node?.turn}|${config.key}`;
+  const cached = BRILLIANT_TT.bestLine.get(cacheKey);
+  if(cached && cached.depth >= config.scanDepth){
+    return { ...cached.result };
+  }
+
+  const evalPayload = existingEval || await analyzeFenPromise(
+    node.fen,
+    node.turn,
+    config.scanDepth,
+    { parallel:true }
+  );
+  assertBrilliantScanActive(cancelToken);
+  const bestUci = Array.isArray(evalPayload?.pv) && evalPayload.pv.length ? String(evalPayload.pv[0]) : '';
+  if(!bestUci) return null;
+
+  const game = cloneGameFromFen(node.fen);
+  if(!game) return null;
+  const res = applyUciMove(game, bestUci);
+  if(!res) return null;
+
+  const result = {
+    uci: bestUci,
+    san: res.san,
+    fen: game.fen(),
+    turn: game.turn(),
+    board: boardFromChessJs(game)
+  };
+  BRILLIANT_TT.bestLine.set(cacheKey, { depth: config.scanDepth, result });
   return { ...result };
 }
 
@@ -2750,32 +2785,28 @@ async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', on
 
     const game = cloneGameFromFen(node.fen);
     if(!game) return [];
-    const legalMoves = game.moves({ verbose:true }) || [];
-    if(!legalMoves.length) return [];
-
     const localFindings = [];
+    const hasSacrificeCandidate = positionHasSacrificeCandidate(node);
+    let nodeEval = null;
 
-    if(positionHasSacrificeCandidate(node)){
+    if(hasSacrificeCandidate){
       const rootEval = await analyzeFenPromise(node.fen, node.turn, config.confirmDepth, { forceFresh:true, parallel:true });
       assertBrilliantScanActive(cancelToken);
       if(rootEval){
+        nodeEval = rootEval;
         const directFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply, config, emitFinding, cancelToken);
         localFindings.push(...directFindings);
       }
     }
 
     if(ply < config.treeMaxPly && exploredNodes < config.treeNodeCap){
-      for(const move of legalMoves){
-        if(exploredNodes >= config.treeNodeCap) break;
-        const nextGame = cloneGameFromFen(node.fen);
-        if(!nextGame) continue;
-        const res = nextGame.move(moveSpecFromVerbose(move));
-        if(!res) continue;
+      const bestChild = await getBestLineMove(node, config, cancelToken, nodeEval);
+      if(bestChild){
         const childFindings = await visit({
-          fen: nextGame.fen(),
-          turn: nextGame.turn(),
-          board: boardFromChessJs(nextGame),
-          path: [...(node.path || []), res.san]
+          fen: bestChild.fen,
+          turn: bestChild.turn,
+          board: bestChild.board,
+          path: [...(node.path || []), bestChild.san]
         }, ply + 1);
         if(childFindings.length) localFindings.push(...childFindings);
       }
@@ -4124,6 +4155,7 @@ const EVAL_POOL = {
 const ENGINE_SEARCH_MS = 2800;
 const ENGINE_HARD_TIMEOUT_MS = 4200;
 const ENGINE_PV_CACHE_PLY = 16;
+const ENGINE_HASH_MB = 32;
 
 function createStockfishWorker(url){
   const workerCode = `self.importScripts(${JSON.stringify(url)});`;
@@ -4228,6 +4260,7 @@ function handleEvalPoolMsg(entry, line){
     if(entry.worker){
       entry.worker.postMessage('setoption name UCI_AnalyseMode value true');
       entry.worker.postMessage('setoption name Skill Level value 20');
+      entry.worker.postMessage('setoption name Hash value ' + ENGINE_HASH_MB);
       entry.worker.postMessage('setoption name MultiPV value 1');
       entry.worker.postMessage('isready');
     }
@@ -4344,6 +4377,7 @@ function flushEvalPoolQueue(){
     entry.worker.postMessage('stop');
     entry.worker.postMessage('setoption name UCI_AnalyseMode value true');
     entry.worker.postMessage('setoption name Skill Level value 20');
+    entry.worker.postMessage('setoption name Hash value ' + ENGINE_HASH_MB);
     entry.worker.postMessage('setoption name MultiPV value 1');
     entry.worker.postMessage('position fen ' + job.fen);
     entry.worker.postMessage('go depth ' + Math.max(1, Math.min(40, Math.round(job.depth))));
@@ -4428,10 +4462,12 @@ function configureEngineForJob(job){
     const skill = Math.max(0, Math.min(20, Math.round(job.skill ?? 20)));
     ENGINE.worker.postMessage('setoption name UCI_AnalyseMode value false');
     ENGINE.worker.postMessage('setoption name Skill Level value ' + skill);
+    ENGINE.worker.postMessage('setoption name Hash value ' + ENGINE_HASH_MB);
     ENGINE.worker.postMessage('setoption name MultiPV value ' + Math.max(1, Math.min(8, job.multiPv || 1)));
   } else {
     ENGINE.worker.postMessage('setoption name UCI_AnalyseMode value true');
     ENGINE.worker.postMessage('setoption name Skill Level value 20');
+    ENGINE.worker.postMessage('setoption name Hash value ' + ENGINE_HASH_MB);
     ENGINE.worker.postMessage('setoption name MultiPV value 1');
   }
 }
