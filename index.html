@@ -2061,7 +2061,7 @@ function analyzeFenPromise(fen, turn, depth = 18, options = {}){
     const timer = setTimeout(() => finish(null), Math.max(9000, targetDepth * 650));
     try {
       if(options?.parallel){
-        requestParallelEval(fen, normalizedTurn, targetDepth, !!options?.forceFresh).then(payload => {
+        requestParallelEval(fen, normalizedTurn, targetDepth, !!options?.forceFresh, options?.channel || 'helpers').then(payload => {
           clearTimeout(timer);
           finish(payload);
         }).catch(() => {
@@ -2391,7 +2391,7 @@ async function getBestLineMove(node, config, cancelToken, existingEval){
     node.fen,
     node.turn,
     config.scanDepth,
-    { parallel:true }
+    { parallel:true, channel:'mainline' }
   );
   assertBrilliantScanActive(cancelToken);
   const bestUci = Array.isArray(evalPayload?.pv) && evalPayload.pv.length ? String(evalPayload.pv[0]) : '';
@@ -4151,6 +4151,15 @@ const EVAL_POOL = {
   latestJob: 0,
   started: false,
 };
+const BRILLIANT_MAIN_WORKER = {
+  worker: null,
+  ready: false,
+  uciOk: false,
+  currentJob: null,
+  timer: null,
+  mode: '',
+  started: false,
+};
 
 const ENGINE_SEARCH_MS = 2800;
 const ENGINE_HARD_TIMEOUT_MS = 4200;
@@ -4196,6 +4205,21 @@ function terminateEvalPool(){
   EVAL_POOL.workers = [];
   EVAL_POOL.queue = [];
   EVAL_POOL.started = false;
+}
+
+function terminateBrilliantMainWorker(){
+  if(BRILLIANT_MAIN_WORKER.timer){
+    clearTimeout(BRILLIANT_MAIN_WORKER.timer);
+    BRILLIANT_MAIN_WORKER.timer = null;
+  }
+  if(BRILLIANT_MAIN_WORKER.worker){
+    try { BRILLIANT_MAIN_WORKER.worker.terminate(); } catch(_) {}
+  }
+  BRILLIANT_MAIN_WORKER.worker = null;
+  BRILLIANT_MAIN_WORKER.ready = false;
+  BRILLIANT_MAIN_WORKER.uciOk = false;
+  BRILLIANT_MAIN_WORKER.currentJob = null;
+  BRILLIANT_MAIN_WORKER.started = false;
 }
 
 function bootEngine(url, mode){
@@ -4314,6 +4338,14 @@ function handleEvalPoolMsg(entry, line){
   }
 }
 
+function configureAnalysisWorker(worker){
+  if(!worker) return;
+  worker.postMessage('setoption name UCI_AnalyseMode value true');
+  worker.postMessage('setoption name Skill Level value 20');
+  worker.postMessage('setoption name Hash value ' + ENGINE_HASH_MB);
+  worker.postMessage('setoption name MultiPV value 1');
+}
+
 function spawnEvalPoolWorker(url, mode){
   const entry = {
     worker: null,
@@ -4357,6 +4389,106 @@ function spawnEvalPoolWorker(url, mode){
   return entry;
 }
 
+function handleBrilliantMainMsg(line){
+  if(!line) return;
+  if(line === 'uciok'){
+    BRILLIANT_MAIN_WORKER.uciOk = true;
+    if(BRILLIANT_MAIN_WORKER.worker){
+      configureAnalysisWorker(BRILLIANT_MAIN_WORKER.worker);
+      BRILLIANT_MAIN_WORKER.worker.postMessage('isready');
+    }
+    return;
+  }
+  if(line === 'readyok'){
+    BRILLIANT_MAIN_WORKER.ready = true;
+    return;
+  }
+
+  const job = BRILLIANT_MAIN_WORKER.currentJob;
+  if(!job) return;
+  if(line.startsWith('bestmove')){
+    if(BRILLIANT_MAIN_WORKER.timer){
+      clearTimeout(BRILLIANT_MAIN_WORKER.timer);
+      BRILLIANT_MAIN_WORKER.timer = null;
+    }
+    job.resolve(cloneEvalPayload(job.lastPayload));
+    BRILLIANT_MAIN_WORKER.currentJob = null;
+    return;
+  }
+
+  if(line.startsWith('info ') && line.includes(' score ')){
+    let payload = null;
+    const mate = line.match(/score mate (-?\d+)/);
+    if(mate){
+      const raw = parseInt(mate[1], 10);
+      const signed = job.turn === 'b' ? -raw : raw;
+      payload = { type:'mate', value:signed };
+    } else {
+      const cp = line.match(/score cp (-?\d+)/);
+      if(cp){
+        const raw = parseInt(cp[1], 10) / 100;
+        const signed = job.turn === 'b' ? -raw : raw;
+        payload = { type:'cp', value:signed };
+      }
+    }
+
+    if(payload){
+      const pvMatch = line.match(/\spv\s+(.+)$/);
+      job.bestPv = pvMatch ? pvMatch[1].trim().split(/\s+/).filter(Boolean) : (job.bestPv || []);
+      payload.pv = job.bestPv.slice();
+      job.lastPayload = cloneEvalPayload(payload);
+      ENGINE.cache.set(job.fen, cloneEvalPayload(payload));
+      cachePrincipalVariation(job, payload, job.bestPv);
+    }
+  }
+}
+
+function initBrilliantMainWorker(){
+  if(BRILLIANT_MAIN_WORKER.started) return;
+  BRILLIANT_MAIN_WORKER.started = true;
+  try {
+    BRILLIANT_MAIN_WORKER.worker = createStockfishWorker(STOCKFISH_WASM_URL);
+    BRILLIANT_MAIN_WORKER.mode = 'wasm';
+  } catch(_) {
+    BRILLIANT_MAIN_WORKER.worker = createStockfishWorker(STOCKFISH_ASM_URL);
+    BRILLIANT_MAIN_WORKER.mode = 'asm';
+  }
+  BRILLIANT_MAIN_WORKER.worker.onmessage = e => handleBrilliantMainMsg(typeof e.data === 'string' ? e.data : '');
+  BRILLIANT_MAIN_WORKER.worker.onerror = () => {
+    const job = BRILLIANT_MAIN_WORKER.currentJob;
+    if(BRILLIANT_MAIN_WORKER.timer){
+      clearTimeout(BRILLIANT_MAIN_WORKER.timer);
+      BRILLIANT_MAIN_WORKER.timer = null;
+    }
+    if(job){
+      job.resolve(cloneEvalPayload(job.lastPayload));
+      BRILLIANT_MAIN_WORKER.currentJob = null;
+    }
+  };
+  BRILLIANT_MAIN_WORKER.worker.postMessage('uci');
+}
+
+function runBrilliantMainJob(job){
+  const entry = BRILLIANT_MAIN_WORKER;
+  if(!entry.worker || !entry.ready || entry.currentJob) return false;
+  entry.currentJob = job;
+  job.bestPv = [];
+  job.lastPayload = null;
+  entry.worker.postMessage('stop');
+  configureAnalysisWorker(entry.worker);
+  entry.worker.postMessage('position fen ' + job.fen);
+  entry.worker.postMessage('go depth ' + Math.max(1, Math.min(40, Math.round(job.depth))));
+  entry.timer = setTimeout(() => {
+    if(entry.currentJob === job){
+      try { entry.worker.postMessage('stop'); } catch(_) {}
+      job.resolve(cloneEvalPayload(job.lastPayload));
+      entry.currentJob = null;
+      entry.timer = null;
+    }
+  }, Math.max(ENGINE_HARD_TIMEOUT_MS, 1200 + (Math.max(1, Number(job.depth) || 1) * 500)));
+  return true;
+}
+
 function initEvalPool(){
   if(EVAL_POOL.started) return;
   EVAL_POOL.started = true;
@@ -4393,10 +4525,32 @@ function flushEvalPoolQueue(){
   }
 }
 
-function requestParallelEval(fen, turn, depth, forceFresh=false){
+function requestParallelEval(fen, turn, depth, forceFresh=false, channel='helpers'){
   return new Promise(resolve => {
     if(!forceFresh && ENGINE.cache.has(fen)){
       resolve(cloneEvalPayload(ENGINE.cache.get(fen)));
+      return;
+    }
+    if(channel === 'mainline'){
+      initBrilliantMainWorker();
+      const job = {
+        id: 'main-' + (++EVAL_POOL.latestJob),
+        fen,
+        turn: turnFromFen(fen) || turn || 'w',
+        depth: Math.max(8, Number(depth) || 18),
+        forceFresh,
+        resolve
+      };
+      let attempts = 0;
+      const tryStart = () => {
+        if(runBrilliantMainJob(job)) return;
+        if(attempts++ > 80){
+          resolve(null);
+          return;
+        }
+        setTimeout(tryStart, 50);
+      };
+      tryStart();
       return;
     }
     initEvalPool();
