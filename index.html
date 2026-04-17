@@ -2299,7 +2299,27 @@ function sacrificeCategoryLabel(category){
   }
 }
 
-function classifySacrificeCandidate(startBoard, res, mover, postMoveReplies){
+function listHangingFriendlyPieces(board, color, ignoredSquares = []){
+  const enemyColor = color === 'w' ? 'b' : 'w';
+  const ignored = new Set(ignoredSquares.filter(Boolean));
+  const out = [];
+  for(let r = 0; r < 8; r++){
+    for(let f = 0; f < 8; f++){
+      const piece = board?.[r]?.[f];
+      if(!piece || piece[0] !== color) continue;
+      if(piece[1] === 'K') continue;
+      const sq = String.fromCharCode(97 + f) + (8 - r);
+      if(ignored.has(sq)) continue;
+      const attacked = isSquareDefendedByBoard(board, r, f, enemyColor);
+      if(!attacked) continue;
+      const defended = isSquareDefendedByBoard(board, r, f, color);
+      if(!defended) out.push(sq);
+    }
+  }
+  return out;
+}
+
+function classifySacrificeCandidate(startBoard, afterBoard, res, mover, postMoveReplies){
   const enemyColor = mover === 'w' ? 'b' : 'w';
   const movedPieceValue = pieceValue(startBoard?.[8 - parseInt(res.from[1], 10)]?.[res.from.charCodeAt(0) - 97]);
   const capturedValue = pieceValue(res.captured);
@@ -2312,6 +2332,9 @@ function classifySacrificeCandidate(startBoard, res, mover, postMoveReplies){
   const apparentSacValue = destinationDefended && recaptureExists && movedPieceValue > capturedValue ? (movedPieceValue - capturedValue) : 0;
   const sacValue = Math.max(quietOfferValue, apparentSacValue);
   const isRealSacrifice = destinationDefended && recaptureExists;
+  const hangingBefore = listHangingFriendlyPieces(startBoard, mover, [res.from]);
+  const hangingAfter = listHangingFriendlyPieces(afterBoard, mover, [res.to]);
+  const defendsFriendlyPiece = hangingAfter.length < hangingBefore.length;
   const isMeaningfulSacrifice = isRealSacrifice && movedPieceValue >= 3 && sacValue >= BRILLIANT_MIN_SAC_VALUE;
   let category = 'positional';
   if(isClearanceSacrifice(startBoard, fromCoords, mover, enemyColor)) category = 'clearance';
@@ -2327,6 +2350,7 @@ function classifySacrificeCandidate(startBoard, res, mover, postMoveReplies){
     recaptureExists,
     sacValue,
     isRealSacrifice,
+    defendsFriendlyPiece,
     isMeaningfulSacrifice,
     category,
     categoryLabel: sacrificeCategoryLabel(category),
@@ -2486,7 +2510,7 @@ function positionHasSacrificeCandidate(node){
     const res = nextGame.move(moveSpecFromVerbose(move));
     if(!res) continue;
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
-    const sac = classifySacrificeCandidate(node.board, res, node.turn, postMoveReplies);
+    const sac = classifySacrificeCandidate(node.board, boardFromChessJs(nextGame), res, node.turn, postMoveReplies);
     if(sac.isMeaningfulSacrifice && !sac.capturedWasHanging){
       BRILLIANT_TT.sacNodes.set(cacheKey, true);
       return true;
@@ -2560,9 +2584,10 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     if(rootBestMoveUci && candidateUci !== rootBestMoveUci) return null;
 
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
-    const sac = classifySacrificeCandidate(start.board, res, mover, postMoveReplies);
+    const sac = classifySacrificeCandidate(start.board, boardFromChessJs(nextGame), res, mover, postMoveReplies);
     if(!sac.isMeaningfulSacrifice) return null;
     if(sac.capturedWasHanging) return null;
+    if(sac.defendsFriendlyPiece) return null;
 
     const shallowEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), config.scanDepth, { parallel:true });
     assertBrilliantScanActive(cancelToken);
