@@ -2322,9 +2322,9 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     });
 
     const nextGame = cloneGameFromFen(start.fen);
-    if(!nextGame) continue;
+    if(!nextGame) return null;
     const res = nextGame.move(moveSpecFromVerbose(move));
-    if(!res) continue;
+    if(!res) return null;
 
     const postMoveReplies = nextGame.moves({ verbose:true }) || [];
     const sac = classifySacrificeCandidate(start.board, res, mover, postMoveReplies);
