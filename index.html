@@ -2299,6 +2299,22 @@ function sacrificeCategoryLabel(category){
   }
 }
 
+function inferCompensationType(candidate, rootScore, bestAcceptance, bestDefense, worstReplyScore){
+  if((bestDefense?.score ?? worstReplyScore ?? -Infinity) >= 99900) return 'mate_attack';
+  if(candidate?.sacCategory === 'deflection') return 'deflection';
+  if(candidate?.sacCategory === 'clearance') return 'clearance';
+  if(bestAcceptance?.continuationSan && rootScore != null && (bestAcceptance.score ?? -Infinity) >= rootScore - BRILLIANT_OPPONENT_GAIN_CP){
+    return 'material_recovery';
+  }
+  if(bestDefense?.continuationSan && rootScore != null && (bestDefense.score ?? -Infinity) >= rootScore - BRILLIANT_OPPONENT_GAIN_CP){
+    return 'material_recovery';
+  }
+  if(rootScore != null && (bestDefense?.score ?? worstReplyScore ?? -Infinity) > rootScore + 35){
+    return 'positional_domination';
+  }
+  return 'none';
+}
+
 function listHangingFriendlyPieces(board, color, ignoredSquares = []){
   const enemyColor = color === 'w' ? 'b' : 'w';
   const ignored = new Set(ignoredSquares.filter(Boolean));
@@ -2351,6 +2367,8 @@ function classifySacrificeCandidate(startBoard, afterBoard, res, mover, postMove
     sacValue,
     isRealSacrifice,
     defendsFriendlyPiece,
+    isFreeCapture: capturedWasHanging,
+    isDefensiveOnly: defendsFriendlyPiece,
     isMeaningfulSacrifice,
     category,
     categoryLabel: sacrificeCategoryLabel(category),
@@ -2613,6 +2631,14 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       san: res.san,
       uci: candidateUci,
       sacValue: sac.sacValue,
+      movedPieceValue: sac.movedPieceValue,
+      capturedValue: sac.capturedValue,
+      sacCategory: sac.category,
+      sacCategoryLabel: sac.categoryLabel,
+      isBestMove: !rootBestMoveUci || candidateUci === rootBestMoveUci,
+      isRealSacrifice: !!sac.isRealSacrifice,
+      isFreeCapture: !!sac.isFreeCapture,
+      isDefensiveOnly: !!sac.isDefensiveOnly,
       shallowScore,
       deepScore,
       lookedWorseAtFirst,
@@ -2752,8 +2778,31 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       worstReplyScore >= rootScore - BRILLIANT_OPPONENT_GAIN_CP
     );
     const sacrificeCanBeAccepted = foundAcceptance;
+    const compensationType = inferCompensationType(candidate, rootScore, bestAcceptance, bestDefense, worstReplyScore);
+    const hasForcingFollowup = Boolean(bestAcceptance?.continuationSan || bestDefense?.continuationSan || worstContinuationSan || candidate.pvSan);
+    const flags = {
+      is_best_move: isBestMove && !!candidate.isBestMove,
+      is_real_sacrifice: !!candidate.isRealSacrifice && candidate.movedPieceValue >= 3,
+      is_free_capture: !!candidate.isFreeCapture,
+      is_defensive_only: !!candidate.isDefensiveOnly,
+      looks_losing_initially: !!candidate.lookedWorseAtFirst,
+      holds_after_best_defense: stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && doesNotImproveOpponent && sacrificeCanBeAccepted,
+      has_forcing_followup: hasForcingFollowup,
+      compensation_type: compensationType
+    };
+    const isBrilliant = (
+      flags.is_best_move &&
+      flags.is_real_sacrifice &&
+      !flags.is_free_capture &&
+      !flags.is_defensive_only &&
+      flags.looks_losing_initially &&
+      flags.holds_after_best_defense &&
+      flags.has_forcing_followup &&
+      flags.compensation_type !== 'none' &&
+      notAlreadyWinning
+    );
 
-    if(isBestMove && notAlreadyWinning && stableEnough && replyHolds && notBadAfterMove && stillNearBestAfterDefense && doesNotImproveOpponent && sacrificeCanBeAccepted){
+    if(isBrilliant){
       const found = {
         path: (start.path || []).slice(),
         pathPly: frontierIndex,
@@ -2774,7 +2823,9 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
         bestDefenseScore: bestDefense?.score ?? worstReplyScore,
         stability: candidate.stability,
         pvSan: candidate.pvSan,
-        reason: candidate.reason
+        reason: candidate.reason,
+        flags,
+        compensationType
       };
       if(emitFinding){
         emitFinding({
