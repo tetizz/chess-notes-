@@ -2093,6 +2093,7 @@ const BRILLIANT_TT = {
   sacNodes: new Map(),
   continuations: new Map(),
   findings: new Map(),
+  subtrees: new Map(),
 };
 const BRILLIANT_MODE_CONFIGS = {
   quick: { key:'quick', label:'Quick', scanDepth:10, confirmDepth:16, replyDepth:16, replyQuickDepth:8, continuationDepth:18, maxShortlist:6, maxDeepReplies:4, treeMaxPly:24, treeNodeCap:2500 },
@@ -2652,11 +2653,42 @@ async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', on
   const findings = [];
   const seenNodes = new Set();
   let exploredNodes = 0;
+  const emitFinding = typeof onFinding === 'function'
+    ? item => {
+        try {
+          onFinding(item);
+        } catch(err) {
+          console.error('Brilliant finder live render failed', err);
+        }
+      }
+    : null;
+
+  function cloneFindingWithPrefix(item, prefix){
+    return {
+      ...item,
+      path: [...(prefix || []), ...(item.path || [])]
+    };
+  }
 
   async function visit(node, ply){
-    if(!node?.fen || ply > config.treeMaxPly || exploredNodes >= config.treeNodeCap) return;
-    const nodeKey = `${ply}|${node.fen}`;
-    if(seenNodes.has(nodeKey)) return;
+    if(!node?.fen || ply > config.treeMaxPly || exploredNodes >= config.treeNodeCap) return [];
+    const remainingPly = config.treeMaxPly - ply;
+    const subtreeKey = `${node.fen}|${node.turn}|${config.key}`;
+    const nodeKey = `${subtreeKey}|${remainingPly}`;
+    if(seenNodes.has(nodeKey)) return [];
+
+    const cachedSubtree = BRILLIANT_TT.subtrees.get(subtreeKey);
+    if(cachedSubtree && cachedSubtree.remainingPly >= remainingPly){
+      const cachedFindings = cachedSubtree.findings.map(item => cloneFindingWithPrefix(item, node.path || []));
+      if(emitFinding){
+        cachedFindings.forEach(item => emitFinding({
+          ...item,
+          path: Array.isArray(item.path) ? item.path.slice() : []
+        }));
+      }
+      return cachedFindings;
+    }
+
     seenNodes.add(nodeKey);
     exploredNodes++;
 
@@ -2671,41 +2703,54 @@ async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', on
     }
 
     const game = cloneGameFromFen(node.fen);
-    if(!game) return;
+    if(!game) return [];
     const legalMoves = game.moves({ verbose:true }) || [];
-    if(!legalMoves.length) return;
+    if(!legalMoves.length) return [];
+
+    const localFindings = [];
 
     if(positionHasSacrificeCandidate(node)){
       const rootEval = await analyzeFenPromise(node.fen, node.turn, config.confirmDepth, { forceFresh:true, parallel:true });
       if(rootEval){
-        const localFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply, config, onFinding);
-        findings.push(...localFindings);
+        const directFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply, config, emitFinding);
+        localFindings.push(...directFindings);
       }
     }
 
-    if(ply >= config.treeMaxPly || exploredNodes >= config.treeNodeCap) return;
-
-    for(const move of legalMoves){
-      if(exploredNodes >= config.treeNodeCap) break;
-      const nextGame = cloneGameFromFen(node.fen);
-      if(!nextGame) continue;
-      const res = nextGame.move(moveSpecFromVerbose(move));
-      if(!res) continue;
-      await visit({
-        fen: nextGame.fen(),
-        turn: nextGame.turn(),
-        board: boardFromChessJs(nextGame),
-        path: [...(node.path || []), res.san]
-      }, ply + 1);
+    if(ply < config.treeMaxPly && exploredNodes < config.treeNodeCap){
+      for(const move of legalMoves){
+        if(exploredNodes >= config.treeNodeCap) break;
+        const nextGame = cloneGameFromFen(node.fen);
+        if(!nextGame) continue;
+        const res = nextGame.move(moveSpecFromVerbose(move));
+        if(!res) continue;
+        const childFindings = await visit({
+          fen: nextGame.fen(),
+          turn: nextGame.turn(),
+          board: boardFromChessJs(nextGame),
+          path: [...(node.path || []), res.san]
+        }, ply + 1);
+        if(childFindings.length) localFindings.push(...childFindings);
+      }
     }
+
+    BRILLIANT_TT.subtrees.set(subtreeKey, {
+      remainingPly,
+      findings: localFindings.map(item => ({
+        ...item,
+        path: Array.isArray(item.path) ? item.path.slice((node.path || []).length) : []
+      }))
+    });
+
+    return localFindings;
   }
 
-  await visit({
+  findings.push(...await visit({
     fen: start.fen,
     turn: start.turn,
     board: start.board,
     path: []
-  }, 0);
+  }, 0));
 
   const deduped = [];
   const seenFindings = new Set();
