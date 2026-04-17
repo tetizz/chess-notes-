@@ -2116,6 +2116,14 @@ function getBrilliantModeConfig(mode){
   return BRILLIANT_MODE_CONFIGS[mode] || BRILLIANT_MODE_CONFIGS.deep;
 }
 
+const BRILLIANT_CANCELLED = '__BRILLIANT_CANCELLED__';
+
+function assertBrilliantScanActive(cancelToken){
+  if(cancelToken?.cancelled){
+    throw new Error(BRILLIANT_CANCELLED);
+  }
+}
+
 function scoreForMover(cp, mover){
   if(cp == null) return null;
   return mover === 'w' ? cp : -cp;
@@ -2335,7 +2343,8 @@ function replyAcceptsSacrifice(reply, candidate){
   return !!reply?.captured && reply.to === candidate.to;
 }
 
-async function analyzeReplyContinuation(replyState, mover, replyEval, config){
+async function analyzeReplyContinuation(replyState, mover, replyEval, config, cancelToken){
+  assertBrilliantScanActive(cancelToken);
   const continuationKey = `${replyState.fen()}|${mover}|${config.key}`;
   const cached = BRILLIANT_TT.continuations.get(continuationKey);
   if(cached && cached.depth >= config.continuationDepth){
@@ -2356,6 +2365,7 @@ async function analyzeReplyContinuation(replyState, mover, replyEval, config){
     config.continuationDepth,
     { forceFresh:true, parallel:true }
   );
+  assertBrilliantScanActive(cancelToken);
   const continuationScore = scoreForMover(payloadToCp(continuationEval), mover);
   if(continuationScore == null) return null;
 
@@ -2411,7 +2421,8 @@ function positionHasSacrificeCandidate(node){
   return false;
 }
 
-async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, frontierIndex, config, onFinding){
+async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, frontierIndex, config, onFinding, cancelToken){
+  assertBrilliantScanActive(cancelToken);
   const emitFinding = typeof onFinding === 'function'
     ? item => {
         try {
@@ -2448,6 +2459,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
 
   const bestScore = rootScore == null ? -Infinity : rootScore;
   const candidateResults = await runLimited(legalMoves, BRILLIANT_PARALLEL_TASKS, async (move, i) => {
+    assertBrilliantScanActive(cancelToken);
     if(typeof onProgress === 'function') onProgress({
       stage:'moves',
       frontierIndex,
@@ -2470,11 +2482,13 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     if(sac.capturedWasHanging) return null;
 
     const shallowEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), config.scanDepth, { parallel:true });
+    assertBrilliantScanActive(cancelToken);
     const shallowScore = scoreForMover(payloadToCp(shallowEval), mover);
     if(shallowScore == null) return null;
     if(rootScore != null && shallowScore < rootScore - (BRILLIANT_NEAR_BEST_CP * 2)) return null;
 
     const deepEval = await analyzeFenPromise(nextGame.fen(), nextGame.turn(), config.confirmDepth, { forceFresh:true, parallel:true });
+    assertBrilliantScanActive(cancelToken);
     const deepScore = scoreForMover(payloadToCp(deepEval), mover);
     if(deepScore == null) return null;
     if(rootScore != null && deepScore < rootScore - BRILLIANT_BEST_MOVE_CP) return null;
@@ -2510,6 +2524,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     .slice(0, config.maxShortlist);
 
   const findingResults = await runLimited(shortlist, BRILLIANT_PARALLEL_TASKS, async (candidate, i) => {
+    assertBrilliantScanActive(cancelToken);
     const replyGame = cloneGameFromFen(candidate.afterFen);
     if(!replyGame) return null;
     const replies = (replyGame.moves({ verbose:true }) || []).slice().sort((a, b) => {
@@ -2523,6 +2538,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     const replySnapshots = [];
 
     const snapshotResults = await runLimited(replies, BRILLIANT_PARALLEL_TASKS, async (reply, j) => {
+      assertBrilliantScanActive(cancelToken);
       if(typeof onProgress === 'function') onProgress({
         stage:'replies',
         frontierIndex,
@@ -2542,6 +2558,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       const acceptance = replyAcceptsSacrifice(reply, candidate);
 
       const quickEval = await analyzeFenPromise(replyState.fen(), replyState.turn(), config.replyQuickDepth, { parallel:true });
+      assertBrilliantScanActive(cancelToken);
       const quickScore = scoreForMover(payloadToCp(quickEval), mover);
       if(quickScore == null) return null;
 
@@ -2573,7 +2590,9 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       .slice(0, config.maxDeepReplies);
 
     const deepResults = await runLimited(deepReplyPool, BRILLIANT_PARALLEL_TASKS, async snapshot => {
+      assertBrilliantScanActive(cancelToken);
       const replyEval = await analyzeFenPromise(snapshot.fen, snapshot.turn, config.replyDepth, { forceFresh:true, parallel:true });
+      assertBrilliantScanActive(cancelToken);
       const replyScore = scoreForMover(payloadToCp(replyEval), mover);
       if(replyScore == null) return null;
 
@@ -2581,7 +2600,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
       let continuationSan = '';
       const replyState = cloneGameFromFen(snapshot.fen);
       if(replyState){
-        const continuation = await analyzeReplyContinuation(replyState, mover, replyEval, config);
+        const continuation = await analyzeReplyContinuation(replyState, mover, replyEval, config, cancelToken);
         if(continuation?.score != null){
           resolvedScore = continuation.score;
           continuationSan = continuation.san || '';
@@ -2669,7 +2688,7 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
   return finalFindings;
 }
 
-async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', onFinding){
+async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', onFinding, cancelToken){
   const config = getBrilliantModeConfig(mode);
   const built = buildStatesFromMoves(moves || []);
   const states = built.states || [];
@@ -2697,6 +2716,7 @@ async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', on
   }
 
   async function visit(node, ply){
+    assertBrilliantScanActive(cancelToken);
     if(!node?.fen || ply > config.treeMaxPly || exploredNodes >= config.treeNodeCap) return [];
     const remainingPly = config.treeMaxPly - ply;
     const subtreeKey = `${node.fen}|${node.turn}|${config.key}`;
@@ -2737,8 +2757,9 @@ async function findBrilliantMovesFromPosition(moves, onProgress, mode='deep', on
 
     if(positionHasSacrificeCandidate(node)){
       const rootEval = await analyzeFenPromise(node.fen, node.turn, config.confirmDepth, { forceFresh:true, parallel:true });
+      assertBrilliantScanActive(cancelToken);
       if(rootEval){
-        const directFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply, config, emitFinding);
+        const directFindings = await findBrilliantCandidatesAtPosition(node, rootEval, onProgress, ply, config, emitFinding, cancelToken);
         localFindings.push(...directFindings);
       }
     }
@@ -2944,6 +2965,11 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
   runBtn.className = 'hbtn primary-btn';
   runBtn.type = 'button';
   runBtn.textContent = 'Find in engine lines';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'hbtn';
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.disabled = true;
   const backBtn = document.createElement('button');
   backBtn.className = 'hbtn';
   backBtn.type = 'button';
@@ -2991,6 +3017,7 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
     renderBoardInput();
   };
   actions.appendChild(runBtn);
+  actions.appendChild(cancelBtn);
   actions.appendChild(backBtn);
   actions.appendChild(saveStartBtn);
   actions.appendChild(resetBtn);
@@ -3009,6 +3036,7 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
   resultsTitle.style.display = 'none';
   results.appendChild(resultsTitle);
   card.appendChild(results);
+  let activeCancelToken = null;
 
   function renderFinding(item, baseMoves, foundKeys){
     if(!item || !results?.isConnected) return false;
@@ -3062,7 +3090,10 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
   }
 
   runBtn.onclick = async () => {
+    const cancelToken = { cancelled:false };
+    activeCancelToken = cancelToken;
     runBtn.disabled = true;
+    cancelBtn.disabled = false;
     results.innerHTML = '';
     results.appendChild(resultsTitle);
     resultsTitle.style.display = 'none';
@@ -3096,7 +3127,7 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
         } catch(err) {
           console.error('Brilliant finder could not render a live result', err);
         }
-      });
+      }, cancelToken);
       if(!findings.length){
         status.textContent = 'No brilliant-move candidates were found in the scanned engine-line positions from this start.';
         status.className = 'practice-status';
@@ -3105,12 +3136,26 @@ function openBrilliantMoveFinder(initialMoves = [], label = 'custom position'){
         status.className = 'practice-status ok';
         findings.forEach(item => { renderFinding(item, baseMoves, foundKeys); });
       }
-    } catch(_) {
-      status.textContent = 'The brilliant move finder could not finish this scan.';
-      status.className = 'practice-status err';
+    } catch(err) {
+      if(String(err?.message || err) === BRILLIANT_CANCELLED){
+        status.textContent = 'Brilliant move scan cancelled.';
+        status.className = 'practice-status';
+      } else {
+        status.textContent = 'The brilliant move finder could not finish this scan.';
+        status.className = 'practice-status err';
+      }
     } finally {
       runBtn.disabled = false;
+      cancelBtn.disabled = true;
+      activeCancelToken = null;
     }
+  };
+
+  cancelBtn.onclick = () => {
+    cancelBtn.disabled = true;
+    status.textContent = 'Cancelling brilliant move scan...';
+    status.className = 'practice-status';
+    if(runBtn.disabled && activeCancelToken) activeCancelToken.cancelled = true;
   };
 
   pageBody.appendChild(card);
