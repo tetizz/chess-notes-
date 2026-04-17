@@ -2601,7 +2601,9 @@ async function findBrilliantCandidatesAtPosition(start, rootEval, onProgress, fr
     if(deepScore == null) return null;
     if(rootScore != null && deepScore < rootScore - BRILLIANT_BEST_MOVE_CP) return null;
     if(rootScore != null && deepScore < rootScore - BRILLIANT_OPPONENT_GAIN_CP) return null;
+    const materiallyLooksSacrificial = sac.isRealSacrifice && sac.sacValue >= BRILLIANT_MIN_SAC_VALUE && sac.movedPieceValue >= 3;
     const lookedWorseAtFirst = (
+      materiallyLooksSacrificial ||
       (rootScore != null && shallowScore <= rootScore - BRILLIANT_SURFACE_DROP_CP) ||
       (deepScore - shallowScore) >= BRILLIANT_RECOVERY_CP
     );
