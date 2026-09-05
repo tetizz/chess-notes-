@@ -1,6 +1,6 @@
-# FaithChess Astra redesign notes
+# FaithChess redesign notes
 
-This branch is a local-only redesign and reliability pass. It has not been pushed or deployed.
+This redesign and reliability pass was published to the `refresh-faithchess` branch. The user authorized merging it into `main` and publishing the site; deployment verification is recorded in the portfolio results report.
 
 ## What changed
 
@@ -26,8 +26,8 @@ This branch is a local-only redesign and reliability pass. It has not been pushe
 - Lighthouse mobile results: Home 98/100/100/100; Puzzles 98/100/100/100; Opening Lab 90/100/100/100 (performance/accessibility/best practices/SEO).
 - Opening Lab's initial transfer fell from roughly 11.2 MB to 411 KiB by deferring Stockfish; the engine still loaded and answered when requested.
 
-## Release gates and honest gaps
+## Credential cleanup and remaining verification
 
-**Do not deploy until the exposed Discord webhook is revoked or rotated.** Removing it from the current tree does not invalidate copies in Git history or an existing live deployment. Decide separately whether published history must be rewritten.
+**Revoke or rotate the previously exposed Discord webhook.** The pre-release live page was confirmed to still deliver that credential, while this version contains no webhook credential and disables the old remote submission path. Publishing the sanitized version removes the current live exposure; revocation remains a separate account action because source removal cannot invalidate copies in Git history or caches. This publication does not claim that the credential has been revoked. Decide separately whether published history must be rewritten.
 
 Firebase-authenticated Play, Arena, Settings, and Profile workflows were not exercised against a production account. No Firebase Realtime Database rules are present in this checkout, so server-side authorization and adversarial two-client behavior remain unverified; multiplayer clocks, moves, and results also remain client-authoritative. Third-party CDN scripts do not currently have a Content Security Policy or Subresource Integrity coverage, and the Cloudinary unsigned-upload preset was not inspected. Verification used Chromium plus automated audits; Firefox, Safari, and a manual screen-reader pass remain outstanding.
