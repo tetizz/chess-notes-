@@ -3,10 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>FaithChess Opening Lab</title>
+<title>Chess Notes</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="description" content="A visual opening notebook for studying, practicing, and mapping chess variations." />
 <style>
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('fonts/outfit-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Outfit';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('fonts/outfit-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 :root {
   --bg:        #111010;
   --bg2:       #181716;
@@ -35,7 +58,7 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
-body { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; overflow-x: hidden; }
+body { font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; overflow-x: hidden; }
 
 /* Header */
 header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 20px; height: 54px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 200; box-shadow: 0 1px 12px rgba(0,0,0,.4); }
@@ -80,7 +103,7 @@ nav { background: var(--bg2); border-right: 1px solid var(--border); padding: 12
 .tree-row.active-leaf .tree-label { color: var(--accent); }
 
 /* Main */
-main { width: 100%; min-width: 0; max-width: 100%; padding: 36px 48px; }
+main { width: 100%; min-width: 0; max-width: 1400px; padding: 36px 48px; }
 
 /* Entry */
 .entry { margin-bottom: 64px; scroll-margin-top: 74px; }
@@ -1019,22 +1042,8 @@ body.brilliant-page-open > footer {
   header .hbtn svg { width: 15px; height: 15px; flex: 0 0 auto; }
 }
 
-/* 2026 reliability and accessibility pass */
-:root {
-  --bg: #0d0f14;
-  --bg2: #141720;
-  --bg3: #1b1f2a;
-  --bg4: #252a37;
-  --border: #343a49;
-  --border2: #4a5265;
-  --text: #d7d8de;
-  --text2: #fbf9f4;
-  --muted: #a5a7b1;
-  --muted2: #868995;
-  --accent: #c6adff;
-  --accent2: #83d8ff;
-  --radius: 10px;
-}
+/* Retained reliability and accessibility safeguards. */
+:root { --muted: #aaa297; --muted2: #918b82; }
 
 :focus-visible {
   outline: 3px solid var(--accent2) !important;
@@ -1057,11 +1066,9 @@ body.brilliant-page-open > footer {
 
 .skip-link:focus { transform: translateY(0); }
 .site-title { display: inline-flex; align-items: center; min-height: 38px; color: var(--text2); text-decoration: none; }
-.block-line, .block-tabs { border-radius: 12px; }
 .hbtn, .mv-btn, .tab-btn { font-family: inherit; }
-.entry-title { line-height: 1.15; }
 .tab-panel[aria-hidden="true"] { display: none; }
-.deferred-entry-btn { width: 100%; min-height: 76px; color: var(--accent2); background: var(--bg2); border: 1px dashed var(--border2); border-radius: 12px; font-family: inherit; font-weight: 700; cursor: pointer; }
+.deferred-entry-btn { width: 100%; min-height: 76px; color: var(--accent2); background: var(--bg2); border: 1px dashed var(--border2); border-radius: 4px; font-family: inherit; font-weight: 700; cursor: pointer; }
 .deferred-entry-btn:hover { color: var(--text2); background: var(--bg3); border-color: var(--accent2); }
 
 @media (max-width: 768px) {
@@ -1181,7 +1188,7 @@ body.brilliant-page-open > footer {
 <a class="skip-link" href="#smain">Skip to opening notes</a>
 
 <header>
-  <a class="site-title" href="index.html" aria-label="Opening Lab — back to FaithChess">♟ Opening Lab</a>
+  <a class="site-title" href="index.html" aria-label="Open Source Theory — back to FaithChess">♟ Open Source Theory</a>
   <span class="site-sub" id="json-filename">chess-notes.json</span>
 
   <button class="hbtn" id="home-btn" style="display:none">
@@ -1388,8 +1395,8 @@ body.brilliant-page-open > footer {
   </div>
 </div>
 
-<script src="theory-data.js?v=astra-20260904-final" defer></script>
-<script src="theory.js?v=astra-20260904-final" defer></script>
+<script src="theory-data.js?v=original-look-20260905" defer></script>
+<script src="theory.js?v=original-look-20260905" defer></script>
 
 <!-- SAVE / SUBMIT MODAL -->
 <div id="save-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);align-items:center;justify-content:center;padding:16px;">
@@ -1466,7 +1473,7 @@ function trapDialogFocus(event, container) {
   });
 });
 </script>
-<script src="settings.js?v=astra-20260904-final"></script>
+<script src="settings.js?v=original-look-20260905"></script>
 </body>
 </html>
 

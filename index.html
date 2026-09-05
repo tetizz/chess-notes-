@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FaithChess — Train, Play, Improve</title>
+<title>FaithChess Home</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="description" content="A focused chess clubhouse for games, tactics, opening study, and live master games." />
-<link rel="stylesheet" href="style.css?v=astra-20260904-final">
+<link rel="stylesheet" href="style.css?v=original-look-20260905">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
 </head>
 <body>
@@ -14,58 +14,29 @@
 <header></header>
 
 <main id="main-content">
-  <section class="hero home-hero">
-    <div class="hero-copy">
-      <p class="eyebrow">Your chess clubhouse</p>
-      <h1>One place to play sharper chess.</h1>
-      <p class="hero-lede">Train a tactical pattern, test an opening, find a game, or watch strong players turn an edge into a win.</p>
-      <div class="hero-actions">
-        <a class="button primary" href="play.html">Play a game</a>
-        <a class="button secondary" href="puzzles.html">Solve a puzzle</a>
-      </div>
-    </div>
-    <nav class="route-grid" aria-label="FaithChess tools">
-      <a class="route-card" href="theory.html"><span>01</span><strong>Opening Lab</strong><small>Build and review your repertoire.</small></a>
-      <a class="route-card" href="arena.html"><span>02</span><strong>Arena</strong><small>Join a tournament and find a game.</small></a>
-      <a class="route-card" href="watch.html"><span>03</span><strong>Live boards</strong><small>Follow four Lichess TV speeds.</small></a>
-      <a class="route-card" href="profile.html"><span>04</span><strong>Your record</strong><small>Review games, form, and friends.</small></a>
-    </nav>
-  </section>
-
-  <section class="section live-feature" aria-labelledby="live-heading">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Live now</p>
-        <h2 id="live-heading">A masterclass, one move at a time.</h2>
-      </div>
-      <p id="liveStatus" class="live-status" role="status" aria-live="polite">Connecting to Lichess TV…</p>
-    </div>
-    <div class="live-layout">
-      <div class="board-wrap live-board-card">
-        <div class="player-bar top" id="black-bar">Black</div>
-        <div id="board" role="img" aria-label="Current Lichess Bullet TV position"></div>
-        <div class="player-bar bottom" id="white-bar">White</div>
-      </div>
-      <div class="live-notes">
-        <p class="eyebrow">How to use this board</p>
-        <h3>Pause before each move.</h3>
-        <p>Choose a candidate, name the threat, then compare your idea with the move played on stream.</p>
-        <div id="moves" class="move-stream" role="log" aria-label="Moves played" aria-live="polite"></div>
-        <a class="text-link" href="watch.html">Open all four live boards <span aria-hidden="true">→</span></a>
-      </div>
-    </div>
-  </section>
+<section class="hero">
+  <h1>Master Chess with Precision</h1>
+  <p>Openings. Tactics. Endgames. Built like a weapon.</p>
+</section>
+<section class="section" style="margin-right: 0;">
+  <div class="board-wrap">
+    <div class="player-bar top" id="black-bar">⚫ Black</div>
+    <p id="liveStatus" class="live-status" role="status" aria-live="polite">Connecting to Lichess TV…</p>
+    <div id="board" style="margin: auto;" role="img" aria-label="Current Lichess Bullet TV position"></div>
+    <div class="player-bar bottom" id="white-bar">⚪ White</div>
+  </div>
+</section>
 </main>
 
-<footer>© 2026 FaithChess <span aria-hidden="true">·</span> Built for curious players</footer>
+<footer>© 2026 FaithChess — Built for everyone</footer>
 
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="nav.js?v=astra-20260904-final"></script>
-<script type="module" src="auth.js?v=astra-20260904-final"></script>
+<script src="nav.js?v=original-look-20260905"></script>
+<script type="module" src="auth.js?v=original-look-20260905"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-<script src="settings.js?v=astra-20260904-final"></script>
-<script src="live.js?v=astra-20260904-final"></script>
+<script src="settings.js?v=original-look-20260905"></script>
+<script src="live.js?v=original-look-20260905"></script>
 </body>
 </html>

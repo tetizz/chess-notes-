@@ -21,6 +21,25 @@ SHELL_PAGES = [
 
 
 class InterfaceContractTests(unittest.TestCase):
+    def test_restored_theme_keeps_original_headings_and_local_font(self):
+        headings = {
+            "index.html": "Master Chess with Precision",
+            "puzzles.html": "Practice With Puzzles",
+            "watch.html": "The Masters Play Here",
+        }
+        for name, heading in headings.items():
+            with self.subTest(page=name):
+                self.assertIn(heading, (ROOT / name).read_text(encoding="utf-8"))
+        css = (ROOT / "style.css").read_text(encoding="utf-8")
+        self.assertIn("--bg: #111010;", css)
+        self.assertNotIn("Astra 2026 interface shell", css)
+        self.assertIn("prefers-reduced-motion", css)
+        self.assertIn(".square-55d63.highlight-square { position: relative;", css)
+        self.assertIn("font-display: swap", css)
+        for name in ("outfit-latin.woff2", "outfit-latin-ext.woff2"):
+            self.assertEqual(b"wOF2", (ROOT / "fonts" / name).read_bytes()[:4])
+        self.assertTrue((ROOT / "fonts" / "OFL.txt").is_file())
+
     def test_shell_pages_keep_header_and_main_landmarks(self):
         for name in SHELL_PAGES:
             source = (ROOT / name).read_text(encoding="utf-8")

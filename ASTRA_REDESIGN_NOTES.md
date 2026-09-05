@@ -1,5 +1,7 @@
 # FaithChess redesign notes
 
+Historical redesign record. The user subsequently requested the original appearance back while retaining the fixes. See [RESTORATION_NOTES.md](RESTORATION_NOTES.md) for the current change; the old Lighthouse figures below are not new measurements of the restored design.
+
 This redesign and reliability pass was published to the `refresh-faithchess` branch. The user authorized merging it into `main` and publishing the site; deployment verification is recorded in the portfolio results report.
 
 ## What changed

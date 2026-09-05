@@ -6,6 +6,7 @@
 
   const main = document.querySelector("main");
   if (main && !main.id) main.id = "main-content";
+  if (main && !main.hasAttribute("tabindex")) main.tabIndex = -1;
 
   if (main && !document.querySelector(".skip-link")) {
     const skipLink = document.createElement("a");
@@ -58,7 +59,7 @@
   const logo = element("a", "logo", "FaithChess");
   logo.href = "index.html";
   logo.setAttribute("aria-label", "FaithChess home");
-  const logoMark = element("span", "logo-mark", "♞");
+  const logoMark = element("span", "logo-mark", "♟");
   logoMark.setAttribute("aria-hidden", "true");
   logo.prepend(logoMark);
 
