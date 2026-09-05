@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FaithChess — Sign Up</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=astra-20260904-final">
 </head>
 <body>
 
@@ -13,34 +13,36 @@
 
 <main>
   <div class="auth-wrap">
-    <div class="auth-box">
-      <h2 class="auth-title">Create account</h2>
+    <form class="auth-box" id="signupForm">
+      <h1 class="auth-title">Create account</h1>
       <p class="auth-sub">Join FaithChess and start playing</p>
       <div class="auth-field">
-        <label>Username</label>
-        <input type="text" id="usernameInput" placeholder="your username" maxlength="24" />
+        <label for="usernameInput">Username</label>
+        <input type="text" id="usernameInput" placeholder="your username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_-]+" autocomplete="username" required aria-describedby="usernameHelp" />
+        <small id="usernameHelp">Letters, numbers, underscores, and hyphens.</small>
       </div>
       <div class="auth-field">
-        <label>Email</label>
-        <input type="email" id="emailInput" placeholder="you@example.com" />
+        <label for="emailInput">Email</label>
+        <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email" required />
       </div>
       <div class="auth-field">
-        <label>Password</label>
-        <input type="password" id="passwordInput" placeholder="min. 6 characters" />
+        <label for="passwordInput">Password</label>
+        <input type="password" id="passwordInput" placeholder="min. 6 characters" minlength="6" autocomplete="new-password" required />
       </div>
-      <div id="authError" class="auth-error hidden"></div>
-      <button class="auth-btn" id="signupBtn">Create Account</button>
+      <div id="authError" class="auth-error hidden" role="alert"></div>
+      <button class="auth-btn" id="signupBtn" type="submit">Create account</button>
       <p class="auth-switch">Already have an account? <a href="login.html">Log In</a></p>
-    </div>
+    </form>
   </div>
 </main>
 
-<script src="nav.js"></script>
+<script src="nav.js?v=astra-20260904-final"></script>
+<script src="settings.js?v=astra-20260904-final"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getAuth, createUserWithEmailAndPassword, deleteUser } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getDatabase, ref, runTransaction, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAUdXVlmN9xhhIzubK0MTtGO3hA9JkHClA",
@@ -56,45 +58,100 @@
   const auth = getAuth(app);
   const db = getDatabase(app);
 
-  document.getElementById("signupBtn").onclick = async () => {
+  document.getElementById("signupForm").addEventListener("submit", async event => {
+    event.preventDefault();
     const username = document.getElementById("usernameInput").value.trim();
     const email = document.getElementById("emailInput").value.trim();
     const password = document.getElementById("passwordInput").value;
     const errEl = document.getElementById("authError");
+    const submitBtn = document.getElementById("signupBtn");
 
     errEl.classList.add("hidden");
     errEl.textContent = "";
 
     if (!username) { errEl.textContent = "Please enter a username."; errEl.classList.remove("hidden"); return; }
     if (username.length < 3) { errEl.textContent = "Username must be at least 3 characters."; errEl.classList.remove("hidden"); return; }
+    if (!/^[A-Za-z0-9_-]+$/.test(username)) { errEl.textContent = "Use only letters, numbers, underscores, and hyphens."; errEl.classList.remove("hidden"); return; }
 
-    const usernameSnap = await get(ref(db, `usernames/${username.toLowerCase()}`));
-    if (usernameSnap.exists()) { errEl.textContent = "Username already taken."; errEl.classList.remove("hidden"); return; }
+    const usernameKey = username.toLowerCase();
+    const usernameRef = ref(db, `usernames/${usernameKey}`);
+    let createdUser = null;
+    let usernameClaimed = false;
 
     try {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Creating account…";
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const uid = cred.user.uid;
+      createdUser = cred.user;
 
-      await set(ref(db, `users/${uid}/username`), username);
-      await set(ref(db, `users/${uid}/email`), email);
-      await set(ref(db, `users/${uid}/rating`), 1200);
-      await set(ref(db, `users/${uid}/wins`), 0);
-      await set(ref(db, `users/${uid}/losses`), 0);
-      await set(ref(db, `users/${uid}/draws`), 0);
-      await set(ref(db, `users/${uid}/createdAt`), Date.now());
-      await set(ref(db, `usernames/${username.toLowerCase()}`), uid);
+      // Keep the username index's existing string-UID shape, but claim it
+      // atomically. Returning undefined aborts when another signup owns it.
+      const claim = await runTransaction(usernameRef, currentUid => {
+        if (currentUid === null) return uid;
+        return undefined;
+      }, { applyLocally: false });
+      usernameClaimed = claim.committed && claim.snapshot.val() === uid;
+      if (!usernameClaimed) {
+        throw Object.assign(new Error("Username taken"), { code: "profile/username-taken" });
+      }
+
+      await update(ref(db), {
+        [`users/${uid}/username`]: username,
+        [`users/${uid}/email`]: email,
+        [`users/${uid}/rating`]: 1200,
+        [`users/${uid}/wins`]: 0,
+        [`users/${uid}/losses`]: 0,
+        [`users/${uid}/draws`]: 0,
+        [`users/${uid}/createdAt`]: Date.now(),
+      });
 
       window.location.href = "index.html";
     } catch (err) {
-      errEl.textContent = friendlyError(err.code);
+      const rollback = await rollbackIncompleteSignup(createdUser, usernameRef, usernameClaimed);
+      errEl.textContent = friendlyError(rollback.complete ? err.code : "profile/rollback-incomplete");
       errEl.classList.remove("hidden");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Create account";
     }
-  };
+  });
+
+  async function rollbackIncompleteSignup(user, usernameRef, usernameClaimed) {
+    let usernameReleased = !usernameClaimed;
+
+    if (usernameClaimed && user) {
+      try {
+        const release = await runTransaction(usernameRef, currentUid => {
+          // Never erase a claim that no longer belongs to this signup.
+          if (currentUid === user.uid) return null;
+          return undefined;
+        }, { applyLocally: false });
+        usernameReleased = release.committed || release.snapshot.val() !== user.uid;
+      } catch {
+        usernameReleased = false;
+      }
+    }
+
+    let authDeleted = !user;
+    if (user) {
+      try {
+        await deleteUser(user);
+        authDeleted = true;
+      } catch {
+        authDeleted = false;
+      }
+    }
+
+    return { complete: usernameReleased && authDeleted };
+  }
 
   function friendlyError(code) {
     if (code === "auth/email-already-in-use") return "An account with that email already exists.";
     if (code === "auth/invalid-email") return "Invalid email address.";
     if (code === "auth/weak-password") return "Password must be at least 6 characters.";
+    if (code === "profile/username-taken") return "That username is already taken.";
+    if (code === "profile/rollback-incomplete") return "Account setup could not be rolled back completely. Contact support before retrying.";
+    if (code === "auth/network-request-failed") return "Could not reach the account service. Check your connection.";
     return "Something went wrong. Please try again.";
   }
 </script>

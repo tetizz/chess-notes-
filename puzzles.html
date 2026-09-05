@@ -4,19 +4,20 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FaithChess — Puzzles</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="description" content="Solve fast, legal chess tactics in a focused board trainer." />
+<link rel="stylesheet" href="style.css?v=astra-20260904-final">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
 </head>
 <body>
 
-<div id="puzzle-popup" class="hidden">
-  <div class="popup-box">
+<div id="puzzle-popup" class="hidden" role="dialog" aria-modal="true" aria-labelledby="puzzle-title" aria-describedby="puzzle-desc" hidden>
+  <div class="popup-box" tabindex="-1">
     <h3 id="puzzle-title">❌ Wrong Move</h3>
     <p id="puzzle-desc">That move doesn't solve the puzzle.</p>
     <div class="popup-actions">
       <button id="retryBtn">Retry</button>
-      <button id="exitBtn">Exit</button>
+      <button id="exitBtn">Next puzzle</button>
       <button id="viewSolutionBtn">Show Solution</button>
     </div>
   </div>
@@ -24,41 +25,61 @@
 
 <header></header>
 
-<main>
-<section class="hero">
-  <h1>Practice With Puzzles</h1>
-  <p>Patterns. Strategies. Tactics. Sharpen your skills.</p>
+<main id="main-content">
+<section class="hero compact-hero">
+  <p class="eyebrow">Tactics trainer</p>
+  <h1>Find the forcing move.</h1>
+  <p>Calculate the reply, commit to a move, then keep the streak alive.</p>
 </section>
 <section class="section">
   <div class="puzzle-layout">
     <div class="board-wrapper">
-      <div id="board"></div>
+      <p id="puzzleStatus" class="board-status" role="status" aria-live="polite">Loading a puzzle…</p>
+      <div id="board" role="group" aria-label="Chess puzzle board"></div>
     </div>
     <div id="puzzle-panel">
       <div class="panel-box">
-        <div class="panel-title">♟ Puzzle Info</div>
+        <div class="panel-title">Puzzle briefing</div>
         <div class="panel-row">
           <span>Side to move</span>
           <b id="sideToMove">-</b>
         </div>
         <div class="panel-row">
+          <span>Rating</span>
+          <b id="puzzleRating">-</b>
+        </div>
+        <div class="panel-row">
           <span>Streak</span>
           <b id="streakCount">0</b>
         </div>
+        <div class="panel-row hidden">
+          <span>Solution</span>
+          <b id="solutionMoves">-</b>
+        </div>
+        <form id="puzzleMoveForm" class="move-entry">
+          <label for="puzzleMove">Keyboard move</label>
+          <div>
+            <input id="puzzleMove" name="move" inputmode="text" autocomplete="off" maxlength="5" pattern="[a-h][1-8][a-h][1-8][qrbn]?" placeholder="e2e4" aria-describedby="moveHelp" />
+            <button type="submit">Play</button>
+          </div>
+          <small id="moveHelp">Enter coordinates such as e2e4.</small>
+        </form>
+        <button type="button" class="button secondary panel-next" id="nextPuzzleBtn">Skip to next puzzle</button>
+        <p class="puzzle-source">Fast local puzzle pack · no giant download</p>
       </div>
     </div>
   </div>
 </section>
 </main>
 
-<footer>© 2026 FaithChess — Built for everyone</footer>
+<footer>© 2026 FaithChess <span aria-hidden="true">·</span> Built for curious players</footer>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-<script type="module" src="auth.js"></script>
-<script src="settings.js"></script>
-<script src="puzzles.js"></script>
-<script src="nav.js"></script>
+<script type="module" src="auth.js?v=astra-20260904-final"></script>
+<script src="settings.js?v=astra-20260904-final"></script>
+<script src="puzzles.js?v=astra-20260904-final"></script>
+<script src="nav.js?v=astra-20260904-final"></script>
 </body>
 </html>

@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FaithChess — Play</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=astra-20260904-final">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
 <style>
   main { padding: 0; }
@@ -298,8 +298,8 @@
   }
 
   .gameover-icon  { font-size: 48px; }
-  .gameover-title { font-size: 26px; font-weight: 700; }
-  .gameover-sub   { font-size: 14px; color: var(--muted); }
+  .gameover-title { margin: 0; font-size: 26px; font-weight: 700; }
+  .gameover-sub   { margin: 0; font-size: 14px; color: var(--muted); }
 
   .gameover-rating { font-size: 20px; font-weight: 700; }
   .gameover-rating.win  { color: #4caf7d; }
@@ -322,33 +322,72 @@
   .go-btn:hover     { opacity: .85; }
   .go-btn.primary   { background: var(--accent); color: #fff; }
   .go-btn.secondary { background: var(--bg4); color: var(--text2); border: 1px solid var(--border); }
+
+  .promotion-box { width: min(420px, calc(100vw - 32px)); min-width: 0; }
+  .promotion-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .promotion-btn {
+    min-height: 76px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg4);
+    color: var(--text2);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .promotion-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .promotion-piece { font-size: 28px; line-height: 1; }
 </style>
 </head>
 <body>
 
+<a class="skip-link" href="#main-content">Skip to game setup</a>
 <header></header>
 
-<div id="gameoverOverlay" class="gameover-overlay hidden">
+<div id="promotionOverlay" class="gameover-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="promotionTitle" aria-describedby="promotionHelp" hidden>
+  <div class="gameover-box promotion-box">
+    <h2 class="gameover-title" id="promotionTitle">Choose promotion</h2>
+    <p class="gameover-sub" id="promotionHelp">Choose the piece for your pawn.</p>
+    <div class="promotion-options">
+      <button class="promotion-btn" type="button" data-promotion="q" aria-label="Promote to queen"><span class="promotion-piece" aria-hidden="true">Q</span><span>Queen</span></button>
+      <button class="promotion-btn" type="button" data-promotion="r" aria-label="Promote to rook"><span class="promotion-piece" aria-hidden="true">R</span><span>Rook</span></button>
+      <button class="promotion-btn" type="button" data-promotion="b" aria-label="Promote to bishop"><span class="promotion-piece" aria-hidden="true">B</span><span>Bishop</span></button>
+      <button class="promotion-btn" type="button" data-promotion="n" aria-label="Promote to knight"><span class="promotion-piece" aria-hidden="true">N</span><span>Knight</span></button>
+    </div>
+    <button class="go-btn secondary" type="button" id="promotionCancel">Cancel</button>
+  </div>
+</div>
+
+<div id="gameoverOverlay" class="gameover-overlay hidden" role="alertdialog" aria-modal="true" aria-atomic="true" aria-labelledby="goTitle" aria-describedby="goSub goRating" hidden>
   <div class="gameover-box">
-    <div class="gameover-icon"   id="goIcon">♟</div>
-    <div class="gameover-title"  id="goTitle">Game Over</div>
+    <div class="gameover-icon" id="goIcon" aria-hidden="true">♟</div>
+    <h2 class="gameover-title" id="goTitle">Game Over</h2>
     <div class="gameover-sub"    id="goSub"></div>
     <div class="gameover-rating hidden" id="goRating"></div>
     <div class="gameover-actions">
-      <button class="go-btn primary"   id="goPlayAgain">Play Again</button>
-      <button class="go-btn primary hidden" id="goArena">Back to Arena</button>
-      <button class="go-btn secondary" id="goHome">Home</button>
+      <button class="go-btn primary" type="button" id="goPlayAgain">Play Again</button>
+      <button class="go-btn primary hidden" type="button" id="goArena">Back to Arena</button>
+      <button class="go-btn secondary" type="button" id="goHome">Home</button>
     </div>
   </div>
 </div>
 
-<main>
+<main id="main-content">
   <div class="play-wrap">
 
     <!-- Board -->
     <div class="board-side">
       <div class="player-bar top" id="black-bar">
-        <div class="bar-avatar" id="blackAvatar">?</div>
+        <div class="bar-avatar" id="blackAvatar" role="img" aria-label="Opponent avatar">?</div>
         <div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span class="bar-name"   id="blackName">Opponent</span>
@@ -358,10 +397,10 @@
         <div class="bar-timer" id="blackTimer">—:——</div>
       </div>
 
-      <div id="board"></div>
+      <div id="board" role="group" aria-label="Chess board" tabindex="-1"></div>
 
       <div class="player-bar bottom" id="white-bar">
-        <div class="bar-avatar" id="whiteAvatar">?</div>
+        <div class="bar-avatar" id="whiteAvatar" role="img" aria-label="Your avatar">?</div>
         <div>
           <div style="display:flex;align-items:center;gap:6px;">
             <span class="bar-name"   id="whiteName">You</span>
@@ -376,54 +415,54 @@
     <div class="right-panel">
       <div class="panel-heading">
         <span class="panel-heading-icon">♟</span>
-        <span class="panel-heading-text">Play Chess</span>
+        <h1 class="panel-heading-text">Play Chess</h1>
       </div>
 
-      <button class="tc-btn" id="tcBullet" data-tc="bullet">
-        <div class="tc-info">
+      <button class="tc-btn" type="button" id="tcBullet" data-tc="bullet">
+        <span class="tc-info">
           <span class="tc-name">Bullet (1+0)</span>
           <span class="tc-desc">1 minute per side</span>
-        </div>
+        </span>
         <span class="tc-check">✓</span>
       </button>
 
-      <button class="tc-btn" id="tcBlitz" data-tc="blitz">
-        <div class="tc-info">
+      <button class="tc-btn" type="button" id="tcBlitz" data-tc="blitz">
+        <span class="tc-info">
           <span class="tc-name">Blitz (5+0)</span>
           <span class="tc-desc">5 minutes per side</span>
-        </div>
+        </span>
         <span class="tc-check">✓</span>
       </button>
 
-      <button class="tc-btn" id="tcRapid" data-tc="rapid">
-        <div class="tc-info">
+      <button class="tc-btn" type="button" id="tcRapid" data-tc="rapid">
+        <span class="tc-info">
           <span class="tc-name">Rapid (10+0)</span>
           <span class="tc-desc">10 minutes per side</span>
-        </div>
+        </span>
         <span class="tc-check">✓</span>
       </button>
 
       <div class="panel-divider"></div>
 
-      <button class="play-btn" id="playBtn">Find Game</button>
-      <button class="cancel-btn" id="cancelBtn">Cancel Search</button>
+      <button class="play-btn" type="button" id="playBtn">Find Game</button>
+      <button class="cancel-btn" type="button" id="cancelBtn">Cancel Search</button>
 
-      <div class="queue-status" id="queueStatus">Select a time control to play</div>
+      <div class="queue-status" id="queueStatus" role="status" aria-live="polite">Select a time control to play</div>
 
       <!-- Game actions (shown during game) -->
 <div id="gameActions" style="display:none;flex-direction:column;gap:8px;margin-top:4px;">
   <div class="panel-divider"></div>
-  <button class="action-btn draw-btn" id="drawOfferBtn">Offer Draw</button>
-  <button class="action-btn resign-btn" id="resignBtn">Resign</button>
-  <div id="drawOfferMsg" style="font-size:12px;text-align:center;min-height:16px;color:var(--muted);"></div>
+  <button class="action-btn draw-btn" type="button" id="drawOfferBtn">Offer Draw</button>
+  <button class="action-btn resign-btn" type="button" id="resignBtn">Resign</button>
+  <div id="drawOfferMsg" role="status" aria-live="polite" style="font-size:12px;text-align:center;min-height:16px;color:var(--muted);"></div>
 </div>
 
 <!-- Incoming draw offer -->
 <div id="drawOfferIncoming" class="hidden" style="margin-top:8px;background:rgba(165,148,192,.1);border:1px solid var(--accent);border-radius:10px;padding:14px;text-align:center;display:flex;flex-direction:column;gap:10px;">
   <div style="font-size:13px;font-weight:600;color:var(--text2);">Draw offered by opponent</div>
   <div style="display:flex;gap:8px;">
-    <button class="action-btn draw-btn" id="acceptDrawBtn" style="flex:1;">Accept</button>
-    <button class="action-btn resign-btn" id="declineDrawBtn" style="flex:1;background:var(--bg4);color:var(--muted);border-color:var(--border);">Decline</button>
+    <button class="action-btn draw-btn" type="button" id="acceptDrawBtn" style="flex:1;">Accept</button>
+    <button class="action-btn resign-btn" type="button" id="declineDrawBtn" style="flex:1;background:var(--bg4);color:var(--muted);border-color:var(--border);">Decline</button>
   </div>
 </div>
     </div>
@@ -432,12 +471,12 @@
 </main>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="nav.js"></script>
-<script type="module" src="auth.js"></script>
-<script type="module" src="challenges.js"></script>
+<script src="nav.js?v=astra-20260904-final"></script>
+<script type="module" src="auth.js?v=astra-20260904-final"></script>
+<script type="module" src="challenges.js?v=astra-20260904-final"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-<script src="settings.js"></script>
-<script src="play.js"></script>
+<script src="settings.js?v=astra-20260904-final"></script>
+<script src="play.js?v=astra-20260904-final"></script>
 </body>
 </html>

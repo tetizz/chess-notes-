@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FaithChess — Profile</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=astra-20260904-final">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
 <style>
   .profile-wrap { max-width: 960px; margin: 40px auto; padding: 0 24px; display: grid; grid-template-columns: 280px 1fr; gap: 24px; align-items: start; }
@@ -179,9 +179,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-<script src="nav.js"></script>
-<script type="module" src="auth.js"></script>
-<script type="module" src="challenges.js"></script>
+<script src="nav.js?v=astra-20260904-final"></script>
+<script type="module" src="auth.js?v=astra-20260904-final"></script>
+<script type="module" src="challenges.js?v=astra-20260904-final"></script>
 
 <script type="module">
   import { getDatabase, ref, get, set, query, orderByChild, equalTo }
@@ -205,8 +205,11 @@
   const db   = getDatabase(app);
   const auth = getAuth(app);
 
-  const params       = new URLSearchParams(window.location.search);
-  const viewUsername = params.get("user");
+  const params = new URLSearchParams(window.location.search);
+  const requestedUsername = params.get("user");
+  const viewUsername = requestedUsername && requestedUsername.length <= 24 && !/[.#$\[\]\/]/.test(requestedUsername)
+    ? requestedUsername
+    : (requestedUsername ? "__invalid_profile__" : null);
 
   const TITLES = {
     dev: { label: "</> Developer", cls: "title-dev" },
@@ -265,7 +268,17 @@
       btn.onclick = async () => {
         btn.disabled    = true;
         btn.textContent = "⏳ Sending...";
-        await window.sendChallenge(targetUid, targetUsername);
+        let sent = false;
+        try {
+          sent = await window.sendChallenge(targetUid, targetUsername);
+        } catch (error) {
+          console.error("Challenge request failed.", error);
+        }
+        if (!sent) {
+          btn.disabled = false;
+          btn.textContent = "⚠ Not sent — try again";
+          return;
+        }
         btn.textContent = "✓ Challenge Sent";
         setTimeout(() => {
           btn.disabled    = false;
@@ -317,11 +330,13 @@
     document.title = `FaithChess — ${username}`;
 
     const titleEl = document.getElementById("titleEl");
+    titleEl.replaceChildren();
     if (data.title && TITLES[data.title]) {
       const t = TITLES[data.title];
-      titleEl.innerHTML = `<span class="title-badge ${t.cls}">${t.label}</span>`;
-    } else {
-      titleEl.innerHTML = "";
+      const badge = document.createElement("span");
+      badge.className = `title-badge ${t.cls}`;
+      badge.textContent = t.label;
+      titleEl.appendChild(badge);
     }
 
     document.getElementById("ratingEl").textContent    = rating;
@@ -454,25 +469,48 @@
   // ── Render game list ────────────────────────────────────────────────────────
   function renderGameList(entries) {
     const listEl = document.getElementById("gameList");
-    listEl.innerHTML = "";
+    listEl.replaceChildren();
 
     if (!entries.length) {
-      listEl.innerHTML = `<div class="empty-state">No games yet. <a href="play.html" style="color:var(--accent)">Play now →</a></div>`;
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.append(document.createTextNode("No games yet. "));
+      const playLink = document.createElement("a");
+      playLink.href = "play.html";
+      playLink.textContent = "Play now →";
+      empty.appendChild(playLink);
+      listEl.appendChild(empty);
       return;
     }
 
     for (const g of entries) {
-      const entry = document.createElement("div");
-      entry.className = `game-entry ${g.result || "draw"}`;
-      entry.innerHTML = `
-        <div class="game-result">${g.result || "draw"}</div>
-        <div>
-          <div class="game-opponent">vs ${g.opponentUsername || "Unknown"}</div>
-          <div class="game-meta">${g.myColor === "white" ? "White" : "Black"} · ${g.playedAt ? new Date(g.playedAt).toLocaleDateString() : ""}</div>
-        </div>
-        <div class="game-moves">${g.moveCount ?? "?"} moves</div>
-        <div class="game-rating-change">${g.ratingChange != null ? (g.ratingChange >= 0 ? "+" : "") + g.ratingChange : "—"}</div>
-      `;
+      const result = ["win", "loss", "draw"].includes(g.result) ? g.result : "draw";
+      const entry = document.createElement(g.gameId ? "button" : "div");
+      entry.className = `game-entry ${result}`;
+      if (g.gameId) entry.type = "button";
+      const resultEl = document.createElement("div");
+      resultEl.className = "game-result";
+      resultEl.textContent = result;
+      const summary = document.createElement("div");
+      const opponent = document.createElement("div");
+      opponent.className = "game-opponent";
+      opponent.textContent = `vs ${g.opponentUsername || "Unknown"}`;
+      const meta = document.createElement("div");
+      meta.className = "game-meta";
+      const date = g.playedAt && Number.isFinite(new Date(g.playedAt).getTime())
+        ? new Date(g.playedAt).toLocaleDateString()
+        : "";
+      meta.textContent = `${g.myColor === "white" ? "White" : "Black"}${date ? ` · ${date}` : ""}`;
+      summary.append(opponent, meta);
+      const moves = document.createElement("div");
+      moves.className = "game-moves";
+      moves.textContent = `${g.moveCount ?? "?"} moves`;
+      const ratingChange = document.createElement("div");
+      ratingChange.className = "game-rating-change";
+      ratingChange.textContent = g.ratingChange != null
+        ? `${g.ratingChange >= 0 ? "+" : ""}${g.ratingChange}`
+        : "—";
+      entry.append(resultEl, summary, moves, ratingChange);
       if (g.gameId) {
         entry.onclick = () => openGameViewer(g.gameId, g.myColor, g.opponentUsername);
       } else {
@@ -501,7 +539,7 @@
     if (viewerBoard) { viewerBoard.destroy(); viewerBoard = null; }
     viewerBoard = Chessboard("viewBoard", {
       position:    "start",
-      pieceTheme:  "https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png",
+      pieceTheme:  window.getPieceTheme ? window.getPieceTheme(window.getSettings?.().pieceSet) : "pieces/cburnett/{piece}.svg",
       orientation: myColor || "white",
     });
 
@@ -568,7 +606,7 @@
   // ── Friends ─────────────────────────────────────────────────────────────────
   async function loadFriends(uid, friends) {
     const listEl = document.getElementById("friendsList");
-    listEl.innerHTML = "";
+    listEl.replaceChildren();
 
     const reqSnap  = await get(ref(db, `users/${uid}/friendRequests`));
     const requests = reqSnap.val() || {};
@@ -576,21 +614,29 @@
     for (const [fromUid, data] of Object.entries(requests)) {
       const item = document.createElement("div");
       item.className = "request-item";
-      item.innerHTML = `
-        <div class="request-label">📨 Request from ${data.username}</div>
-        <div class="request-actions">
-          <button class="btn-accept" data-uid="${fromUid}">Accept</button>
-          <button class="btn-decline" data-uid="${fromUid}">Decline</button>
-        </div>
-      `;
-      item.querySelector(".btn-accept").onclick = async () => {
+      const label = document.createElement("div");
+      label.className = "request-label";
+      label.textContent = `📨 Request from ${data?.username || "Player"}`;
+      const actions = document.createElement("div");
+      actions.className = "request-actions";
+      const accept = document.createElement("button");
+      accept.type = "button";
+      accept.className = "btn-accept";
+      accept.textContent = "Accept";
+      const decline = document.createElement("button");
+      decline.type = "button";
+      decline.className = "btn-decline";
+      decline.textContent = "Decline";
+      actions.append(accept, decline);
+      item.append(label, actions);
+      accept.onclick = async () => {
         await set(ref(db, `users/${uid}/friends/${fromUid}`), true);
         await set(ref(db, `users/${fromUid}/friends/${uid}`), true);
         await set(ref(db, `users/${uid}/friendRequests/${fromUid}`), null);
         const freshSnap = await get(ref(db, `users/${uid}/friends`));
         loadFriends(uid, freshSnap.val() || {});
       };
-      item.querySelector(".btn-decline").onclick = async () => {
+      decline.onclick = async () => {
         await set(ref(db, `users/${uid}/friendRequests/${fromUid}`), null);
         const freshSnap = await get(ref(db, `users/${uid}/friends`));
         loadFriends(uid, freshSnap.val() || {});
@@ -614,15 +660,28 @@
       const item    = document.createElement("div");
       item.className = "friend-item";
       item.title     = `View ${fname}'s profile`;
-      item.innerHTML = `
-        <div class="friend-avatar">${fname[0].toUpperCase()}</div>
-        <div>
-          <div class="friend-name">${fname}</div>
-          <div class="friend-rating">${fRating}</div>
-        </div>
-      `;
+      item.tabIndex = 0;
+      item.setAttribute("role", "link");
+      const avatar = document.createElement("div");
+      avatar.className = "friend-avatar";
+      avatar.textContent = fname[0]?.toUpperCase() || "?";
+      const info = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "friend-name";
+      name.textContent = fname;
+      const rating = document.createElement("div");
+      rating.className = "friend-rating";
+      rating.textContent = String(fRating);
+      info.append(name, rating);
+      item.append(avatar, info);
       item.onclick = () => {
         window.location.href = `profile.html?user=${encodeURIComponent(fname)}`;
+      };
+      item.onkeydown = event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          item.click();
+        }
       };
       listEl.appendChild(item);
     }
@@ -661,6 +720,6 @@
   }
 </script>
 
-<script src="settings.js"></script>
+<script src="settings.js?v=astra-20260904-final"></script>
 </body>
 </html>

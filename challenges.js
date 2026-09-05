@@ -25,6 +25,8 @@ let myUsername = null;
 // ── Toast ───────────────────────────────────────────────────
 function showToast(msg) {
   const el = document.createElement("div");
+  el.className = "app-toast";
+  el.setAttribute("role", "status");
   el.style.cssText = `
     position:fixed;bottom:20px;right:20px;
     background:var(--bg2,#222);color:var(--text2,#fff);
@@ -47,29 +49,41 @@ function updateInbox(challenges) {
 
   if (entries.length === 0) {
     badge.classList.add("hidden");
-    listEl.innerHTML = `<div class="cog-item" style="color:var(--muted);font-size:13px;">No pending challenges</div>`;
+    listEl.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "cog-item cog-note";
+    empty.textContent = "No pending challenges";
+    listEl.appendChild(empty);
     return;
   }
 
   badge.textContent = entries.length;
   badge.classList.remove("hidden");
-  listEl.innerHTML = "";
+  listEl.replaceChildren();
 
   for (const [fromUid, data] of entries) {
     const item = document.createElement("div");
-    item.style.cssText = "padding:10px 16px;border-bottom:1px solid var(--border);";
-    item.innerHTML = `
-      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px;">⚔ ${data.fromUsername}</div>
-      <div style="display:flex;gap:6px;">
-        <button data-accept="${fromUid}" style="flex:1;padding:4px 8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius,6px);font-family:'Outfit',sans-serif;font-size:12px;font-weight:600;cursor:pointer;">Accept</button>
-        <button data-decline="${fromUid}" style="flex:1;padding:4px 8px;background:var(--bg4);color:var(--muted);border:none;border-radius:var(--radius,6px);font-family:'Outfit',sans-serif;font-size:12px;font-weight:600;cursor:pointer;">Decline</button>
-      </div>
-    `;
-    item.querySelector("[data-accept]").onclick = e => {
+    item.className = "challenge-item";
+    const label = document.createElement("div");
+    label.className = "challenge-label";
+    label.textContent = `⚔ ${data?.fromUsername || "Player"}`;
+    const actions = document.createElement("div");
+    actions.className = "challenge-actions";
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.className = "challenge-accept";
+    accept.textContent = "Accept";
+    const decline = document.createElement("button");
+    decline.type = "button";
+    decline.className = "challenge-decline";
+    decline.textContent = "Decline";
+    actions.append(accept, decline);
+    item.append(label, actions);
+    accept.onclick = e => {
       e.stopPropagation();
       acceptChallenge(fromUid, data);
     };
-    item.querySelector("[data-decline]").onclick = e => {
+    decline.onclick = e => {
       e.stopPropagation();
       declineChallenge(fromUid);
     };
@@ -79,20 +93,30 @@ function updateInbox(challenges) {
 
 // ── Send Challenge ──────────────────────────────────────────
 window.sendChallenge = async function(toUid, toUsername) {
-  if (!myUid) return;
+  if (!myUid) {
+    showToast("Log in to send a challenge");
+    return false;
+  }
 
-  const already = await get(ref(db, `challenges/${toUid}/${myUid}`));
-  if (already.exists()) { showToast("Already challenged"); return; }
+  try {
+    const already = await get(ref(db, `challenges/${toUid}/${myUid}`));
+    if (already.exists()) { showToast("Already challenged"); return false; }
 
-  await set(ref(db, `challenges/${toUid}/${myUid}`), {
-    fromUid:      myUid,
-    fromUsername: myUsername,
-    toUid,
-    toUsername,
-    sentAt:       Date.now(),
-  });
+    await set(ref(db, `challenges/${toUid}/${myUid}`), {
+      fromUid: myUid,
+      fromUsername: myUsername,
+      toUid,
+      toUsername,
+      sentAt: Date.now(),
+    });
 
-  showToast(`Challenge sent to ${toUsername}!`);
+    showToast(`Challenge sent to ${toUsername}!`);
+    return true;
+  } catch (error) {
+    console.error("Challenge could not be sent.", error);
+    showToast("Challenge could not be sent. Try again.");
+    return false;
+  }
 };
 
 // ── Accept Challenge ────────────────────────────────────────

@@ -1,5 +1,8 @@
 (function () {
-  const DEFAULTS = {
+  "use strict";
+
+  const STORAGE_KEY = "faithchess_settings";
+  const DEFAULTS = Object.freeze({
     darkMode: true,
     boardTheme: "classic",
     pieceSet: "cburnett",
@@ -7,71 +10,108 @@
     legalMoves: true,
     animation: true,
     emailNotif: false,
-  };
+  });
+  const BOARD_THEMES = new Set(["classic", "green", "blue", "purple"]);
+  const PIECE_SETS = new Set([
+    "alpha", "anarcandy", "caliente", "california", "cardinal", "cburnett", "celtic",
+    "chess7", "chessnut", "companion", "cooke", "disguised", "dubrovny", "fantasy",
+    "firi", "fresca", "gioco", "governor", "horsey", "icpieces", "kiwen-suwi",
+    "kosal", "leipzig", "letter", "maestro", "merida", "monarchy", "mpchess",
+    "pirouetti", "pixel", "reillycraig", "rhosgfx", "riohacha", "shahi-ivory-brown",
+    "shapes", "spatial", "staunty", "tatiana", "xkcd",
+  ]);
+
+  function sanitize(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+      darkMode: typeof source.darkMode === "boolean" ? source.darkMode : DEFAULTS.darkMode,
+      boardTheme: BOARD_THEMES.has(source.boardTheme) ? source.boardTheme : DEFAULTS.boardTheme,
+      pieceSet: PIECE_SETS.has(source.pieceSet) ? source.pieceSet : DEFAULTS.pieceSet,
+      sound: typeof source.sound === "boolean" ? source.sound : DEFAULTS.sound,
+      legalMoves: typeof source.legalMoves === "boolean" ? source.legalMoves : DEFAULTS.legalMoves,
+      animation: typeof source.animation === "boolean" ? source.animation : DEFAULTS.animation,
+      emailNotif: typeof source.emailNotif === "boolean" ? source.emailNotif : DEFAULTS.emailNotif,
+    };
+  }
 
   function loadSettings() {
-    const saved = localStorage.getItem("faithchess_settings");
-    return saved ? { ...DEFAULTS, ...JSON.parse(saved) } : { ...DEFAULTS };
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      return sanitize(saved ? JSON.parse(saved) : DEFAULTS);
+    } catch (error) {
+      console.warn("FaithChess settings were reset because saved data was unreadable.", error);
+      return { ...DEFAULTS };
+    }
   }
 
   function saveSettings(settings) {
-    localStorage.setItem("faithchess_settings", JSON.stringify(settings));
+    const safeSettings = sanitize(settings);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(safeSettings));
+      return true;
+    } catch (error) {
+      console.warn("FaithChess settings could not be saved.", error);
+      return false;
+    }
   }
 
   function applySettings(settings) {
     document.body.classList.toggle("light-mode", !settings.darkMode);
-    document.body.setAttribute("data-board-theme", settings.boardTheme);
+    document.body.classList.toggle("reduce-app-motion", !settings.animation);
+    document.body.dataset.boardTheme = settings.boardTheme;
   }
 
-  // Apply on every page load
   const settings = loadSettings();
   applySettings(settings);
 
-  // Only wire up the form if we're on settings.html
   document.addEventListener("DOMContentLoaded", () => {
-    const darkModeToggle = document.getElementById("darkModeToggle");
-    const boardTheme = document.getElementById("boardTheme");
-    const soundToggle = document.getElementById("soundToggle");
-    const legalMovesToggle = document.getElementById("legalMovesToggle");
-    const animationToggle = document.getElementById("animationToggle");
-    const emailNotifToggle = document.getElementById("emailNotifToggle");
+    const controls = {
+      darkMode: document.getElementById("darkModeToggle"),
+      boardTheme: document.getElementById("boardTheme"),
+      pieceSet: document.getElementById("pieceSet"),
+      sound: document.getElementById("soundToggle"),
+      legalMoves: document.getElementById("legalMovesToggle"),
+      animation: document.getElementById("animationToggle"),
+      emailNotif: document.getElementById("emailNotifToggle"),
+    };
     const saveBtn = document.getElementById("saveBtn");
     const saveMsg = document.getElementById("saveMsg");
-    const pieceSet = document.getElementById("pieceSet");
-    if (pieceSet) pieceSet.value = settings.pieceSet || "cburnett";
 
-    if (!saveBtn) return; // not on settings page
+    for (const [key, control] of Object.entries(controls)) {
+      if (!control) continue;
+      if (control.type === "checkbox") control.checked = settings[key];
+      else control.value = settings[key];
+    }
 
-    // Populate form with current settings
-    darkModeToggle.checked = settings.darkMode;
-    boardTheme.value = settings.boardTheme;
-    soundToggle.checked = settings.sound;
-    legalMovesToggle.checked = settings.legalMoves;
-    animationToggle.checked = settings.animation;
-    emailNotifToggle.checked = settings.emailNotif;
-
-    // Live preview dark mode toggle
-    darkModeToggle.addEventListener("change", () => {
-      document.body.classList.toggle("light-mode", !darkModeToggle.checked);
+    controls.darkMode?.addEventListener("change", () => {
+      document.body.classList.toggle("light-mode", !controls.darkMode.checked);
     });
 
+    if (!saveBtn) return;
     saveBtn.addEventListener("click", () => {
       const updated = {
-  darkMode:   darkModeToggle.checked,
-  boardTheme: boardTheme.value,
-  pieceSet:   pieceSet ? pieceSet.value : "staunty",   // ← add
-  sound:      soundToggle.checked,
-  legalMoves: legalMovesToggle.checked,
-  animation:  animationToggle.checked,
-  emailNotif: emailNotifToggle.checked,
-};
-      saveSettings(updated);
-      applySettings(updated);
-      saveMsg.textContent = "✓ Settings saved!";
-      setTimeout(() => saveMsg.textContent = "", 2500);
+        darkMode: controls.darkMode?.checked ?? DEFAULTS.darkMode,
+        boardTheme: controls.boardTheme?.value,
+        pieceSet: controls.pieceSet?.value,
+        sound: controls.sound?.checked ?? DEFAULTS.sound,
+        legalMoves: controls.legalMoves?.checked ?? DEFAULTS.legalMoves,
+        animation: controls.animation?.checked ?? DEFAULTS.animation,
+        emailNotif: controls.emailNotif?.checked ?? DEFAULTS.emailNotif,
+      };
+      const saved = saveSettings(updated);
+      applySettings(sanitize(updated));
+      if (saveMsg) {
+        saveMsg.textContent = saved ? "Settings saved." : "Settings applied, but this browser blocked saving.";
+        saveMsg.setAttribute("role", "status");
+        window.setTimeout(() => { saveMsg.textContent = ""; }, 3000);
+      }
     });
   });
 
-  // Expose for use in other scripts (e.g. play.js checking sound/animation)
   window.getSettings = loadSettings;
+  window.getPieceTheme = function getPieceTheme(pieceSet) {
+    const safeSet = PIECE_SETS.has(pieceSet) ? pieceSet : DEFAULTS.pieceSet;
+    const extension = safeSet === "monarchy" ? "webp" : "svg";
+    return `pieces/${safeSet}/{piece}.${extension}`;
+  };
 })();

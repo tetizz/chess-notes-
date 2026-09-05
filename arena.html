@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FaithChess — Arena</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=astra-20260904-final">
 <style>
   main { padding: 0; }
 
@@ -307,10 +307,10 @@
   </div>
 </div>
 
-<script src="nav.js"></script>
-<script type="module" src="auth.js"></script>
-<script type="module" src="challenges.js"></script>
-<script src="settings.js"></script>
+<script src="nav.js?v=astra-20260904-final"></script>
+<script type="module" src="auth.js?v=astra-20260904-final"></script>
+<script type="module" src="challenges.js?v=astra-20260904-final"></script>
+<script src="settings.js?v=astra-20260904-final"></script>
 
 <script type="module">
   import { getDatabase, ref, get, set, push, onValue, runTransaction, remove, onDisconnect }
@@ -347,6 +347,25 @@
   let isSearching      = false;
   let matchUnsub       = null;
 
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, character => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;",
+    })[character]);
+  }
+
+  function safeStatus(value) {
+    return ["waiting", "active", "finished"].includes(value) ? value : "waiting";
+  }
+
+  function safeNumber(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   onAuthStateChanged(auth, async user => {
     if (!user) { window.location.href = "login.html"; return; }
@@ -376,17 +395,27 @@
       listEl.innerHTML = "";
       for (const t of items) {
         const count = t.players ? Object.keys(t.players).length : 0;
+        const status = safeStatus(t.status);
+        const timeControl = TC_LABELS[t.timeControl] || t.timeControl || "Custom";
         const card  = document.createElement("div");
         card.className  = `t-card${t.id === selectedId ? " selected" : ""}`;
         card.dataset.id = t.id;
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
         card.innerHTML  = `
-          <div class="t-card-name">${t.name || "Arena"}</div>
+          <div class="t-card-name">${escapeHTML(t.name || "Arena")}</div>
           <div class="t-card-meta">
-            <span class="status-badge ${t.status}">${t.status}</span>
-            <span class="t-card-info">${TC_LABELS[t.timeControl] || t.timeControl} · ${t.durationMinutes}min · ${count}p</span>
+            <span class="status-badge ${status}">${status}</span>
+            <span class="t-card-info">${escapeHTML(timeControl)} · ${safeNumber(t.durationMinutes)}min · ${count}p</span>
           </div>
         `;
         card.onclick = () => selectTournament(t.id);
+        card.onkeydown = event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            card.click();
+          }
+        };
         listEl.appendChild(card);
       }
     });
@@ -416,6 +445,8 @@
     const isCreator  = t.createdBy === myUid;
     const count      = players.length;
     const searching  = isSearching && selectedId === id;
+    const status     = safeStatus(t.status);
+    const timeControl = TC_LABELS[t.timeControl] || t.timeControl || "Custom";
 
     // ── Actions ──
     let actionsHTML = "";
@@ -464,8 +495,8 @@
     if (t.status === "waiting") {
       const playerItems = players.map(p => `
         <div class="player-join-item">
-          <div class="player-join-avatar">${(p.username || "?")[0].toUpperCase()}</div>
-          <span>${p.username}${p.uid === myUid ? `<span class="lb-you">(You)</span>` : ""}${p.uid === t.createdBy ? `<span class="lb-you">creator</span>` : ""}</span>
+          <div class="player-join-avatar">${escapeHTML((p.username || "?")[0].toUpperCase())}</div>
+          <span>${escapeHTML(p.username || "Player")}${p.uid === myUid ? `<span class="lb-you">(You)</span>` : ""}${p.uid === t.createdBy ? `<span class="lb-you">creator</span>` : ""}</span>
         </div>
       `).join("");
       bodyHTML = `
@@ -479,11 +510,11 @@
     document.getElementById("detailPanel").innerHTML = `
       <div class="detail-header">
         <div>
-          <div class="detail-title">${t.name || "Arena"}</div>
+          <div class="detail-title">${escapeHTML(t.name || "Arena")}</div>
           <div class="detail-badges">
-            <span class="status-badge ${t.status}">${t.status}</span>
-            <span class="detail-badge">${TC_LABELS[t.timeControl] || t.timeControl}</span>
-            <span class="detail-badge">${t.durationMinutes} min</span>
+            <span class="status-badge ${status}">${status}</span>
+            <span class="detail-badge">${escapeHTML(timeControl)}</span>
+            <span class="detail-badge">${safeNumber(t.durationMinutes)} min</span>
             <span class="detail-badge">${count} player${count !== 1 ? "s" : ""}</span>
           </div>
         </div>
@@ -535,10 +566,10 @@
       return `
         <tr>
           <td class="lb-rank ${rankClass}">#${rank}</td>
-          <td>${p.username}${p.uid === myUid ? `<span class="lb-you">(You)</span>` : ""}</td>
-          <td class="lb-score">${p.score || 0}</td>
-          <td class="lb-wdl">${p.wins || 0}W / ${p.draws || 0}D / ${p.losses || 0}L</td>
-          <td class="lb-wdl">${p.gamesPlayed || 0} games</td>
+          <td>${escapeHTML(p.username || "Player")}${p.uid === myUid ? `<span class="lb-you">(You)</span>` : ""}</td>
+          <td class="lb-score">${safeNumber(p.score)}</td>
+          <td class="lb-wdl">${safeNumber(p.wins)}W / ${safeNumber(p.draws)}D / ${safeNumber(p.losses)}L</td>
+          <td class="lb-wdl">${safeNumber(p.gamesPlayed)} games</td>
         </tr>
       `;
     }).join("");

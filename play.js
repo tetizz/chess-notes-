@@ -1,5 +1,9 @@
 const settings = window.getSettings ? window.getSettings() : {};
 const pieceSet = settings.pieceSet || "cburnett";
+const pieceTheme = window.getPieceTheme
+  ? window.getPieceTheme(pieceSet)
+  : "pieces/cburnett/{piece}.svg";
+const boardAnimationTime = settings.animation === false ? 0 : 180;
 
 // =======================
 // TIME CONTROLS
@@ -19,17 +23,63 @@ let myQueueRef = null;
 // =======================
 const boardEl = document.getElementById("board");
 if (!boardEl) throw new Error("No #board element found");
+const promotionOverlay = document.getElementById("promotionOverlay");
+const promotionButtons = [...document.querySelectorAll("[data-promotion]")];
+const promotionCancel = document.getElementById("promotionCancel");
+const gameOverOverlay = document.getElementById("gameoverOverlay");
 
 const game = new Chess();
 let board = Chessboard("board", {
   draggable: false,
   position: "start",
-  pieceTheme: `pieces/${pieceSet}/{piece}.svg`,
+  pieceTheme,
 });
 
 let myColor = null;
 let currentGameId = null;
 let gameOverHandled = false;
+let pendingPromotion = null;
+let promotionReturnFocus = null;
+let gameOverReturnFocus = null;
+
+function dialogButtons(dialog) {
+  if (!dialog) return [];
+  return [...dialog.querySelectorAll("button:not([disabled])")]
+    .filter(button => !button.hidden && !button.classList.contains("hidden"));
+}
+
+function trapDialogFocus(event, dialog) {
+  if (event.key !== "Tab") return;
+  const focusable = dialogButtons(dialog);
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function rememberFocus(fallback = boardEl) {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active !== document.body ? active : fallback;
+}
+
+function restoreFocus(target, fallback = boardEl) {
+  window.requestAnimationFrame(() => {
+    const targetIsVisible = target instanceof HTMLElement
+      && target.isConnected
+      && !target.closest("[hidden], .hidden")
+      && target.getClientRects().length > 0;
+    (targetIsVisible ? target : fallback)?.focus();
+  });
+}
 
 // =======================
 // TIMERS
@@ -202,9 +252,10 @@ function clearLegalDots() {
   });
 }
 
-function onDrop(source, target) {
-  clearLegalDots();
-  const move = game.move({ from: source, to: target, promotion: "q" });
+function commitMove(source, target, promotion = "") {
+  const moveData = { from: source, to: target };
+  if (promotion) moveData.promotion = promotion;
+  const move = game.move(moveData);
   if (!move) return "snapback";
   board.position(game.fen(), false);
   playSound(soundForMove(move, game));
@@ -213,6 +264,68 @@ function onDrop(source, target) {
   renderTimers();
 
   pushMove();
+}
+
+function openPromotionChooser(source, target) {
+  if (!promotionOverlay) return;
+  pendingPromotion = {
+    source,
+    target,
+    fen: game.fen(),
+    gameId: currentGameId,
+  };
+  promotionReturnFocus = rememberFocus();
+  promotionOverlay.hidden = false;
+  promotionOverlay.classList.remove("hidden");
+  window.requestAnimationFrame(() => promotionButtons[0]?.focus());
+}
+
+function closePromotionChooser({ restore = true } = {}) {
+  if (!promotionOverlay) return null;
+  const returnTarget = promotionReturnFocus;
+  promotionOverlay.classList.add("hidden");
+  promotionOverlay.hidden = true;
+  pendingPromotion = null;
+  promotionReturnFocus = null;
+  if (restore) restoreFocus(returnTarget);
+  return returnTarget;
+}
+
+promotionButtons.forEach(button => {
+  button.addEventListener("click", () => {
+    const pending = pendingPromotion;
+    const promotion = button.dataset.promotion;
+    const returnTarget = closePromotionChooser({ restore: false });
+    if (!pending || pending.gameId !== currentGameId || pending.fen !== game.fen()) {
+      board.position(game.fen(), false);
+      restoreFocus(returnTarget);
+      return;
+    }
+    const result = commitMove(pending.source, pending.target, promotion);
+    if (result === "snapback") board.position(game.fen(), false);
+    restoreFocus(returnTarget);
+  });
+});
+
+promotionCancel?.addEventListener("click", () => closePromotionChooser());
+promotionOverlay?.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closePromotionChooser();
+    return;
+  }
+  trapDialogFocus(event, promotionOverlay);
+});
+
+function onDrop(source, target) {
+  clearLegalDots();
+  const needsPromotion = game.moves({ square: source, verbose: true })
+    .some(move => move.to === target && Boolean(move.promotion));
+  if (needsPromotion) {
+    openPromotionChooser(source, target);
+    return "snapback";
+  }
+  return commitMove(source, target);
 }
 
 // =======================
@@ -354,10 +467,10 @@ function startGame(gameId, color, tc) {
     position: "start",
     draggable: true,
     orientation: color,
-    moveSpeed: 200,
-    snapSpeed: 150,
-    snapbackSpeed: 200,
-    pieceTheme: "https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png",
+    moveSpeed: boardAnimationTime,
+    snapSpeed: boardAnimationTime,
+    snapbackSpeed: boardAnimationTime,
+    pieceTheme,
     onDrop,
     onDragStart,
     onSnapbackEnd: () => clearLegalDots(),
@@ -376,12 +489,29 @@ function startGame(gameId, color, tc) {
 // =======================
 // GAME OVER UI
 // =======================
+function hideGameOver({ restore = true } = {}) {
+  if (!gameOverOverlay) return null;
+  const returnTarget = gameOverReturnFocus;
+  gameOverOverlay.classList.add("hidden");
+  gameOverOverlay.hidden = true;
+  gameOverReturnFocus = null;
+  if (restore) restoreFocus(returnTarget);
+  return returnTarget;
+}
+
+gameOverOverlay?.addEventListener("keydown", event => {
+  trapDialogFocus(event, gameOverOverlay);
+});
+
 function showGameOver(result, reason) {
-  const overlay = document.getElementById("gameoverOverlay");
   const icon = document.getElementById("goIcon");
   const title = document.getElementById("goTitle");
   const sub = document.getElementById("goSub");
   const rating = document.getElementById("goRating");
+  if (!gameOverOverlay || !icon || !title || !sub || !rating) return;
+
+  closePromotionChooser({ restore: false });
+  gameOverReturnFocus = rememberFocus();
 
   const reasonMap = {
     checkmate: "by checkmate",
@@ -412,11 +542,13 @@ function showGameOver(result, reason) {
   rating.textContent = change >= 0 ? `+${change} rating` : `${change} rating`;
   rating.classList.remove("hidden");
 
-  overlay.classList.remove("hidden");
+  gameOverOverlay.hidden = false;
+  gameOverOverlay.classList.remove("hidden");
+  window.requestAnimationFrame(() => dialogButtons(gameOverOverlay)[0]?.focus());
 }
 
 document.getElementById("goPlayAgain").onclick = () => {
-  document.getElementById("gameoverOverlay").classList.add("hidden");
+  const returnTarget = hideGameOver({ restore: false });
   document.getElementById("gameActions").style.display = "none";
   currentGameId = null;
   gameOverHandled = false;
@@ -432,9 +564,10 @@ document.getElementById("goPlayAgain").onclick = () => {
   board = Chessboard("board", {
     draggable: false,
     position: "start",
-    pieceTheme: "https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png",
+    pieceTheme,
   });
   setQueueStatus("Select a time control to play");
+  restoreFocus(returnTarget);
 };
 
 document.getElementById("goHome").onclick = () => {
@@ -476,8 +609,15 @@ async function fetchUserData(uid) {
 function setAvatar(elId, url, letter) {
   const el = document.getElementById(elId);
   if (!el) return;
-  if (url) {
-    el.style.backgroundImage = `url(${url})`;
+  let safeUrl = null;
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (parsed.protocol === "https:" || parsed.origin === window.location.origin) safeUrl = parsed.href;
+  } catch {
+    safeUrl = null;
+  }
+  if (safeUrl) {
+    el.style.backgroundImage = `url(${JSON.stringify(safeUrl)})`;
     el.style.backgroundSize = "cover";
     el.style.backgroundPosition = "center";
     el.style.fontSize = "0";
@@ -500,9 +640,24 @@ async function updatePlayerBars(data) {
     fetchUserData(blackUid),
   ]);
 
-  const titleTag = (key) => {
-    const t = key && TITLE_LABELS[key];
-    return t ? `<span class="bar-title" style="color:${t.color}">${t.label}</span> ` : "";
+  const renderName = (element, titleKey, username, isCurrentPlayer = false) => {
+    if (!element) return;
+    element.replaceChildren();
+    const title = titleKey && TITLE_LABELS[titleKey];
+    if (title) {
+      const badge = document.createElement("span");
+      badge.className = "bar-title";
+      badge.style.color = title.color;
+      badge.textContent = title.label;
+      element.append(badge, document.createTextNode(" "));
+    }
+    element.append(document.createTextNode(username));
+    if (isCurrentPlayer) {
+      const you = document.createElement("span");
+      you.className = "bar-you";
+      you.textContent = "You";
+      element.append(document.createTextNode(" "), you);
+    }
   };
 
   // My data vs opponent data
@@ -522,9 +677,9 @@ async function updatePlayerBars(data) {
   setAvatar("whiteAvatar", myData.avatar, myUsername[0].toUpperCase());
   setAvatar("blackAvatar", oppData.avatar, oppUsername[0].toUpperCase());
 
-  if (bottomName) bottomName.innerHTML = `${titleTag(myData.title)}${myUsername} <span class="bar-you"></span>`;
+  renderName(bottomName, myData.title, myUsername, true);
   if (bottomRating) bottomRating.textContent = myData.rating ? `(${myData.rating})` : "";
-  if (topName) topName.innerHTML = `${titleTag(oppData.title)}${oppUsername}`;
+  renderName(topName, oppData.title, oppUsername);
   if (topRating) topRating.textContent = oppData.rating ? `(${oppData.rating})` : "";
 }
 
@@ -743,17 +898,24 @@ document.getElementById("declineDrawBtn").onclick = async () => {
 // =======================
 // SOUND SYSTEM
 // =======================
-const sounds = {
-  move: new Audio("sounds/move-self.mp3"),
-  capture: new Audio("sounds/capture.mp3"),
-  check: new Audio("sounds/move-check.mp3"),
+const soundPaths = {
+  move: "sounds/move-self.mp3",
+  capture: "sounds/capture.mp3",
+  check: "sounds/move-check.mp3",
 };
+const sounds = new Map();
 
 function playSound(name) {
   const s2 = window.getSettings ? window.getSettings() : {};
   if (!s2.sound) return;
-  const s = sounds[name];
-  if (!s) return;
+  const path = soundPaths[name];
+  if (!path) return;
+  let s = sounds.get(name);
+  if (!s) {
+    s = new Audio(path);
+    s.preload = "none";
+    sounds.set(name, s);
+  }
   s.currentTime = 0;
   s.play().catch(() => { });
 }
@@ -802,9 +964,6 @@ waitForFirebase(() => {
           window.myUsername = username;
           loadMyAvatar();
 
-          const params = new URLSearchParams(window.location.search);
-          const challengeId = params.get("challenge");
-          const colorParam = params.get("color");
           const params        = new URLSearchParams(window.location.search);
           const challengeId   = params.get("challenge");
           const colorParam    = params.get("color");
