@@ -2046,6 +2046,27 @@ function buildLineWidget(moves){
   let ply = 0;
   let flipped = false;
   let playTimer = null;
+  let disposed = false, navigationGeneration = 0, motionGeneration = 0;
+  let moveRaf = null, moveFinish = null, moveGhost = null;
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function cancelMoveMotion(){
+    motionGeneration++;
+    if(moveRaf !== null) cancelAnimationFrame(moveRaf);
+    if(moveFinish !== null) clearTimeout(moveFinish);
+    moveRaf = moveFinish = null;
+    moveGhost?.remove(); moveGhost = null;
+    motionPreference.removeEventListener('change', settleCurrentMove);
+  }
+  function settleCurrentMove(){
+    cancelMoveMotion();
+    if(disposed || !layout.isConnected) return;
+    const current = states[ply];
+    renderBrd(grid, ac, current.board, current.from, current.to, false, flipped, current.checkSquare);
+  }
+  const activeGoto = delta=>goto(ply+delta);
+  layout.cancelLineMotion = ()=>{ stopPlay(); if(moveGhost) settleCurrentMove(); else cancelMoveMotion(); if(window._activeGoto === activeGoto) window._activeGoto = null; };
+  layout.disposeLineWidget = ()=>{ disposed = true; navigationGeneration++; stopPlay(); cancelMoveMotion(); if(window._activeGoto === activeGoto) window._activeGoto = null; };
 
   function stopPlay(){
     if(playTimer){
@@ -2058,11 +2079,13 @@ function buildLineWidget(moves){
   }
 
   function startPlay(){
+    if(disposed) return;
     stopPlay();
     playBtn.textContent = '⏸';
     playBtn.setAttribute('aria-label','Pause line');
     playBtn.classList.add('active');
     playTimer = setInterval(() => {
+      if(!layout.isConnected){ layout.disposeLineWidget(); return; }
       if(ply >= moves.length){
         stopPlay();
         return;
@@ -2072,13 +2095,16 @@ function buildLineWidget(moves){
   }
 
   function goto(p, requestEngine=true){
+    if(disposed) return;
+    const navigation = ++navigationGeneration;
+    cancelMoveMotion();
     if(p < 0) p = 0;
     if(p > moves.length) p = moves.length;
     const prevPly = ply;
     ply = p;
     const s = states[ply];
 
-    const doAnim = Math.abs(ply - prevPly) === 1 && s.from && s.to && typeof gw !== 'undefined';
+    const doAnim = !motionPreference.matches && Math.abs(ply - prevPly) === 1 && s.from && s.to && typeof gw !== 'undefined';
     let movingPiece = null;
     if(doAnim){
       const prevState = states[prevPly];
@@ -2104,21 +2130,27 @@ function buildLineWidget(moves){
       ghost.style.left = (start.f * sq) + 'px';
       ghost.style.top = (start.r * sq) + 'px';
       gw.appendChild(ghost);
+      moveGhost = ghost;
+      const motion = motionGeneration;
+      motionPreference.addEventListener('change', settleCurrentMove);
 
-      requestAnimationFrame(() => {
+      moveRaf = requestAnimationFrame(() => {
+        if(motion !== motionGeneration) return;
+        moveRaf = null;
+        if(disposed || !layout.isConnected){ cancelMoveMotion(); return; }
         ghost.style.transform = `translate3d(${(end.f - start.f) * sq}px, ${(end.r - start.r) * sq}px, 0)`;
       });
 
-      setTimeout(() => {
-        ghost.remove();
-        renderBrd(grid, ac, s.board, s.from, s.to, false, flipped, s.checkSquare);
+      moveFinish = setTimeout(() => {
+        if(motion !== motionGeneration) return;
+        settleCurrentMove();
       }, 190);
     }
 
     ctr.textContent = ply + ' / ' + moves.length;
     ml.querySelectorAll('.mb').forEach(b => b.classList.toggle('active', +b.dataset.ply === ply));
     const active = ml.querySelector('.mb.active');
-    if(active) active.scrollIntoView({ block:'nearest', behavior:'smooth' });
+    if(active) active.scrollIntoView({ block:'nearest', behavior:motionPreference.matches?'auto':'smooth' });
 
     if(ply > 0 && moves[ply-1].comment){
       cmt.textContent = moves[ply-1].comment;
@@ -2136,8 +2168,8 @@ function buildLineWidget(moves){
         requestEval(
           s.fen,
           s.turn,
-          payload => updateEvalUI(evalUi, payload),
-          txt => setEvalStatus(evalUi, txt),
+          payload => { if(!disposed && navigation === navigationGeneration) updateEvalUI(evalUi, payload); },
+          txt => { if(!disposed && navigation === navigationGeneration) setEvalStatus(evalUi, txt); },
           18
         );
       } catch(_) {}
@@ -2150,10 +2182,10 @@ function buildLineWidget(moves){
   b2.onclick = ()=>{ stopPlay(); goto(ply-1); };
   b3.onclick = ()=>{ stopPlay(); goto(ply+1); };
   b4.onclick = ()=>{ stopPlay(); goto(moves.length); };
-  flipBtn.onclick = ()=>{ flipped = !flipped; renderBrd(grid, ac, states[ply].board, states[ply].from, states[ply].to, false, flipped, states[ply].checkSquare); };
+  flipBtn.onclick = ()=>{ flipped = !flipped; settleCurrentMove(); };
   playBtn.onclick = ()=>{ playTimer ? stopPlay() : startPlay(); };
 
-  layout.addEventListener('click', ()=>{ window._activeGoto = (delta)=> goto(ply+delta); });
+  layout.addEventListener('click', ()=>{ window._activeGoto = activeGoto; });
   layout.addEventListener('keydown',e=>{
     if(e.key!=='ArrowLeft' && e.key!=='ArrowRight') return;
     if(e.target?.closest('button,input,textarea,select,[role="tab"],[contenteditable="true"]')) return;
@@ -3086,6 +3118,10 @@ const ENGINE_HARD_TIMEOUT_MS = 4200;
 const ENGINE_PV_CACHE_PLY = 16;
 
 function createStockfishWorker(url){
+  const engineUrl = new URL(url, window.location.href);
+  if((engineUrl.protocol === 'http:' || engineUrl.protocol === 'https:') && engineUrl.origin === window.location.origin){
+    return new Worker(engineUrl.href);
+  }
   const workerCode = `self.importScripts(${JSON.stringify(url)});`;
   const blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
   try {
@@ -4259,6 +4295,7 @@ function buildBlocks(blocks, container, entry, parentNavId){
         };
         panels.push(panel);buttons.push(btn);renderers.push(renderPanel);
         btn.addEventListener('click',()=>{
+          panels.forEach(p=>p.querySelectorAll('.study-layout').forEach(widget=>widget.cancelLineMotion?.()));
           buttons.forEach((button,index)=>{
             const selected=button===btn;
             button.classList.toggle('active',selected);
@@ -4457,6 +4494,7 @@ function renderView(){
   navTabRegistry = {};
   const mainEl=document.getElementById('smain');
   const navEl=document.getElementById('snav');
+  mainEl.querySelectorAll('.study-layout').forEach(widget=>widget.disposeLineWidget?.());
   mainEl.innerHTML='';
   // Clear nav except label
   Array.from(navEl.children).forEach(c=>{if(!c.classList.contains('nav-label'))c.remove();});
