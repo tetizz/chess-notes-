@@ -218,6 +218,10 @@ main { width: 100%; min-width: 0; max-width: 1400px; padding: 36px 48px; }
 }
 
 /* Move panel */
+@media (prefers-reduced-motion: reduce) {
+  .line-move-ghost, .sq, .eval-black, .toast { transition: none !important; }
+}
+
 .move-panel { flex: 1 1 420px; min-width: min(100%, max(380px, calc(var(--sq) * 6.4))); max-width: 100%; width: min(100%, 860px); }
 .move-nav {
   display: flex;
